@@ -1,4 +1,4 @@
-#include <AXI4UnixBridges.h>
+#include <BlueAXI4UnixBridges.h>
 #include <stdio.h>
 #include <pthread.h>
 #include <unistd.h>
@@ -59,54 +59,8 @@ int main (int argc, char** argv) {
     printf ("usage: %s PORT_DIR N_READ N_WRITE (argc: %d)\n", argv[0], argc);
     exit (EXIT_FAILURE);
   }
-  size_t len = strlen (argv[1]) + 10;
-  char* awSnk_path = (char*) malloc (len * sizeof(char));
-  char*  wSnk_path = (char*) malloc (len * sizeof(char));
-  char*  bSrc_path = (char*) malloc (len * sizeof(char));
-  char* arSnk_path = (char*) malloc (len * sizeof(char));
-  char*  rSrc_path = (char*) malloc (len * sizeof(char));
-  strcpy (awSnk_path, argv[1]);
-  strcpy ( wSnk_path, argv[1]);
-  strcpy ( bSrc_path, argv[1]);
-  strcpy (arSnk_path, argv[1]);
-  strcpy ( rSrc_path, argv[1]);
-  strcat (awSnk_path,  "/awSink");
-  strcat ( wSnk_path,   "/wSink");
-  strcat ( bSrc_path, "/bSource");
-  strcat (arSnk_path,  "/arSink");
-  strcat ( rSrc_path, "/rSource");
-  axi4_port_fifo_desc_t* slvDesc = aub_fifo_OpenAsSlave
-    ( awSnk_path, AXI4_AW_BYTEsz(2,32,0), &AXI4_AW_(2,32,0,encode_flit)
-    ,  wSnk_path, AXI4_W_BYTEsz(64,0), &AXI4_W_(64,0,encode_flit)
-    ,  bSrc_path, AXI4_B_BYTEsz(2,0), &AXI4_B_(2,0,decode_flit)
-    , arSnk_path, AXI4_AR_BYTEsz(2,32,0), &AXI4_AR_(2,32,0,encode_flit)
-    ,  rSrc_path, AXI4_R_BYTEsz(2,64,0), &AXI4_R_(2,64,0,decode_flit) );
-  printf("opened axi4 slave port:\n");
-  printf( "\taw: %s, %0d bytes (from %0d bits), encoder: %p\n"
-        , awSnk_path
-        , AXI4_AW_BYTEsz(2,32,0)
-        , AXI4_AW_BITsz(2,32,0)
-        , &AXI4_AW_(2,32,0,encode_flit));
-  printf( "\tw: %s, %0d bytes (from %0d bits), encoder: %p\n"
-        , wSnk_path
-        , AXI4_W_BYTEsz(64,0)
-        , AXI4_W_BITsz(64,0)
-        , &AXI4_W_(64,0,encode_flit));
-  printf( "\tb: %s, %0d bytes (from %0d bits), decoder: %p\n"
-        , bSrc_path
-        , AXI4_B_BYTEsz(2,0)
-        , AXI4_B_BITsz(2,0)
-        , &AXI4_B_(2,0,decode_flit));
-  printf( "\tar: %s, %0d bytes (from %0d bits), encoder: %p\n"
-        , arSnk_path
-        , AXI4_AR_BYTEsz(2,32,0)
-        , AXI4_AR_BITsz(2,32,0)
-        , &AXI4_AR_(2,32,0,encode_flit));
-  printf( "\tr: %s, %0d bytes (from %0d bits), decoder: %p\n"
-        , rSrc_path
-        , AXI4_R_BYTEsz(2,64,0)
-        , AXI4_R_BITsz(2,64,0)
-        , &AXI4_R_(2,64,0,decode_flit));
+  axi4_port_fifo_desc_t* slvDesc =
+    AXI4_(2, 32, 64, 0, 0, 0, 0, 0, fifo_OpenAsSlave)(argv[1]);
   printf("argv[1]: %s\n", argv[1]);
   printf("argv[2]: %s\n", argv[2]);
   printf("argv[3]: %s\n", argv[3]);
@@ -130,7 +84,7 @@ int main (int argc, char** argv) {
   pthread_join (arThread, NULL);
   pthread_join (rThread, NULL);
 
-  aub_fifo_Close (slvDesc);
+  baub_fifo_Close (slvDesc);
 
   return 0;
 

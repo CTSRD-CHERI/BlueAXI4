@@ -1,5 +1,5 @@
-#ifndef AXI4_UNIX_BRIDGES_HELPERS_H
-#define AXI4_UNIX_BRIDGES_HELPERS_H
+#ifndef BLUE_AXI4_UNIX_BRIDGES_HELPERS_H
+#define BLUE_AXI4_UNIX_BRIDGES_HELPERS_H
 
 /*-
  * Copyright (c) 2022 Alexandre Joannou
@@ -54,9 +54,9 @@
 // - AXI4_AR_(IDsz,ADDRsz,ARUSERsz,sym)
 // - AXI4_R_(IDsz,DATAsz,RUSERsz,sym)
 //
-// A DEF_AXI4_API macro which defines the API functions for the given parameters
-// (each function name starts with a parameterized prefix PFX of the form
-//  "axi4_{aw,w,b,ar,r}_<params>")
+// A DEF_AXI4_HELPERS_API macro which defines the API functions for the given
+// parameters (each function name starts with a parameterized prefix PFX of the
+// form "baub_axi4_{aw,w,b,ar,r}_<params>")
 //
 // - PFX_get_<fieldname> (uint8_t* field, const uint8_t* rawflit)
 // - PFX_set_<fieldname> (uint8_t* rawflit, const uint8_t* field)
@@ -251,7 +251,7 @@ typedef struct {
 #define _AXI4_Ax_BYTEsz(X,Y,Z) _DIV8CEIL(_AXI4_Ax_BITsz(X,Y,Z))
 
 #define _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,sym) \
-  axi4_a ## x ## _ ## IDsz ## _ ## ADDRsz ## _ ## AxUSERsz ## _ ## sym
+  baub_axi4_a ## x ## _ ## IDsz ## _ ## ADDRsz ## _ ## AxUSERsz ## _ ## sym
 
 #define _DEF_AXI4_AxFlit(x, IDsz, ADDRsz, AxUSERsz) \
 void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## user) \
@@ -551,7 +551,7 @@ void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,print_flit) \
 #define AXI4_W_BYTEsz(X,Y) _DIV8CEIL(AXI4_W_BITsz(X,Y))
 
 #define AXI4_W_(DATAsz,WUSERsz,sym) \
-  axi4_w_ ## DATAsz ## _ ## WUSERsz ## _ ## sym
+  baub_axi4_w_ ## DATAsz ## _ ## WUSERsz ## _ ## sym
 
 #define DEF_AXI4_WFlit(DATAsz, WUSERsz) \
 void AXI4_W_(DATAsz,WUSERsz,get_wuser) \
@@ -685,7 +685,7 @@ void AXI4_W_(DATAsz,WUSERsz,print_flit) (const t_axi4_wflit* flit) { \
 #define AXI4_B_BYTEsz(X,Y) _DIV8CEIL(AXI4_B_BITsz(X,Y))
 
 #define AXI4_B_(IDsz,BUSERsz,sym) \
-  axi4_b_ ## IDsz ## _ ## BUSERsz ## _ ## sym
+  baub_axi4_b_ ## IDsz ## _ ## BUSERsz ## _ ## sym
 
 #define DEF_AXI4_BFlit(IDsz, BUSERsz) \
 void AXI4_B_(IDsz,BUSERsz,get_buser) (uint8_t* buser, const uint8_t* bflit) { \
@@ -812,7 +812,7 @@ void AXI4_B_(IDsz,BUSERsz,print_flit) (const t_axi4_bflit* flit) { \
 #define AXI4_R_BYTEsz(X,Y,Z) _DIV8CEIL(AXI4_R_BITsz(X,Y,Z))
 
 #define AXI4_R_(IDsz,DATAsz,RUSERsz,sym) \
-  axi4_rflit_ ## IDsz ## _ ## DATAsz ## _ ## RUSERsz ## _ ## sym
+  baub_axi4_rflit_ ## IDsz ## _ ## DATAsz ## _ ## RUSERsz ## _ ## sym
 
 #define DEF_AXI4_RFlit(IDsz, DATAsz, RUSERsz) \
 void AXI4_R_(IDsz,DATAsz,RUSERsz,get_ruser) \
@@ -948,7 +948,7 @@ void AXI4_R_(IDsz,DATAsz,RUSERsz,print_flit) (const t_axi4_rflit* flit) { \
 // AXI4 fully parameterized definitions
 ////////////////////////////////////////////////////////////////////////////////
 
-#define DEF_AXI4_API(IDsz, ADDRsz, DATAsz, AWsz, Wsz, Bsz, ARsz, Rsz) \
+#define DEF_AXI4_HEPLERS_API(IDsz, ADDRsz, DATAsz, AWsz, Wsz, Bsz, ARsz, Rsz) \
   DEF_AXI4_AWFlit(IDsz, ADDRsz, AWsz) \
   DEF_AXI4_WFlit(DATAsz, Wsz) \
   DEF_AXI4_BFlit(IDsz, Bsz) \

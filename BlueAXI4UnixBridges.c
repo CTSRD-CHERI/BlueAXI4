@@ -1,6 +1,3 @@
-#ifndef AXI4_UNIX_FIFO_H
-#define AXI4_UNIX_FIFO_H
-
 /*-
  * Copyright (c) 2022 Alexandre Joannou
  * All rights reserved.
@@ -31,44 +28,55 @@
  * @BERI_LICENSE_HEADER_END@
  */
 
-// This header declares the BlueUnixFifo API for C client, as well as the C
-// functions to be wrapped in Bluespec SystemVerilog BDPI calls for use in
-// BSV simulator code.
-
 #include <BlueUnixBridges.h>
+#include <BlueAXI4UnixBridges.h>
 
-// An AXI4UnixFifo port descriptor
-typedef struct {
-  fifo_desc_t* aw;
-  fifo_desc_t*  w;
-  fifo_desc_t*  b;
-  fifo_desc_t* ar;
-  fifo_desc_t*  r;
-} axi4_port_fifo_desc_t;
-
-// AXI4 Unix Bridges Fifo API
-////////////////////////////////////////////////////////////////////////////////
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-extern axi4_port_fifo_desc_t* aub_fifo_OpenAsMaster
+inline axi4_port_fifo_desc_t* baub_fifo_OpenChannelsAsMaster
   ( char* awSrc_path, size_t awSrc_bytesize, decoder_t awSrc_decoder
   , char* wSrc_path, size_t wSrc_bytesize, decoder_t wSrc_decoder
   , char* bSnk_path, size_t bSnk_bytesize, encoder_t bSnk_encoder
   , char* arSrc_path, size_t arSrc_bytesize, decoder_t arSrc_decoder
-  , char* rSnk_path, size_t rSnk_bytesize, encoder_t rSnk_encoder );
-extern axi4_port_fifo_desc_t* aub_fifo_OpenAsSlave
+  , char* rSnk_path, size_t rSnk_bytesize, encoder_t rSnk_encoder ) {
+  axi4_port_fifo_desc_t* desc =
+    (axi4_port_fifo_desc_t*) malloc (sizeof (axi4_port_fifo_desc_t));
+  desc->aw =
+    bub_fifo_OpenAsConsumer (awSrc_path, awSrc_bytesize, awSrc_decoder);
+  desc->w =
+    bub_fifo_OpenAsConsumer (wSrc_path, wSrc_bytesize, wSrc_decoder);
+  desc->b =
+    bub_fifo_OpenAsProducer (bSnk_path, bSnk_bytesize, bSnk_encoder);
+  desc->ar =
+    bub_fifo_OpenAsConsumer (arSrc_path, arSrc_bytesize, arSrc_decoder);
+  desc->r =
+    bub_fifo_OpenAsProducer (rSnk_path, rSnk_bytesize, rSnk_encoder);
+  return desc;
+}
+
+inline axi4_port_fifo_desc_t* baub_fifo_OpenChannelsAsSlave
   ( char* awSnk_path, size_t awSnk_bytesize, encoder_t awSnk_encoder
   , char* wSnk_path, size_t wSnk_bytesize, encoder_t wSnk_encoder
   , char* bSrc_path, size_t bSrc_bytesize, decoder_t bSrc_decoder
   , char* arSnk_path, size_t arSnk_bytesize, encoder_t arSnk_encoder
-  , char* rSrc_path, size_t rSrc_bytesize, decoder_t rSrc_decoder );
-extern void aub_fifo_Close (axi4_port_fifo_desc_t* desc);
-
-#ifdef __cplusplus
+  , char* rSrc_path, size_t rSrc_bytesize, decoder_t rSrc_decoder ) {
+  axi4_port_fifo_desc_t* desc =
+    (axi4_port_fifo_desc_t*) malloc (sizeof (axi4_port_fifo_desc_t));
+  desc->aw =
+    bub_fifo_OpenAsProducer (awSnk_path, awSnk_bytesize, awSnk_encoder);
+  desc->w =
+    bub_fifo_OpenAsProducer (wSnk_path, wSnk_bytesize, wSnk_encoder);
+  desc->b =
+    bub_fifo_OpenAsConsumer (bSrc_path, bSrc_bytesize, bSrc_decoder);
+  desc->ar =
+    bub_fifo_OpenAsProducer (arSnk_path, arSnk_bytesize, arSnk_encoder);
+  desc->r =
+    bub_fifo_OpenAsConsumer (rSrc_path, rSrc_bytesize, rSrc_decoder);
+  return desc;
 }
-#endif
 
-#endif
+inline void baub_fifo_Close (axi4_port_fifo_desc_t* desc) {
+  bub_fifo_Close (desc->aw);
+  bub_fifo_Close (desc->w);
+  bub_fifo_Close (desc->b);
+  bub_fifo_Close (desc->ar);
+  bub_fifo_Close (desc->r);
+}
