@@ -84,9 +84,9 @@
 #define _MASK8LO(N) (~(0xff<<(N)))
 #define _MASK8HI(N) (~(0xff>>(N)))
 
-static inline void *bitmemcpy( void *destArg, size_t destBitOffset
-                             , const void *srcArg, size_t srcBitOffset
-                             , size_t bitLen ) {
+static inline void *bitmemcpy( void *destArg, const size_t destBitOffset
+                             , const void *srcArg, const size_t srcBitOffset
+                             , const size_t bitLen ) {
   size_t completeBytes = bitLen / 8;
   size_t overflowBits = bitLen % 8;
   uint8_t* dest = (uint8_t*) destArg;
@@ -97,8 +97,9 @@ static inline void *bitmemcpy( void *destArg, size_t destBitOffset
       dest[completeBytes] = src[completeBytes] & _MASK8LO(overflowBits);
   }
   else {
+    int i = 0;
     uint8_t tmp = 0;
-    for (int i = 0; i < completeBytes; i++) {
+    do {
       tmp = src[i];
       if (srcBitOffset) {
         tmp >>= srcBitOffset;
@@ -110,7 +111,8 @@ static inline void *bitmemcpy( void *destArg, size_t destBitOffset
         dest[i+1] &= _MASK8HI(8-destBitOffset);
         dest[i+1] |= tmp >> (8-destBitOffset);
       }
-    }
+      i++;
+    } while (i < completeBytes);
   }
   return dest;
 }
