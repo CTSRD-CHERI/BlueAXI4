@@ -40,12 +40,12 @@
 
 // An AXI4UnixFifo port descriptor
 typedef struct {
-  fifo_desc_t* aw;
-  fifo_desc_t*  w;
-  fifo_desc_t*  b;
-  fifo_desc_t* ar;
-  fifo_desc_t*  r;
-} axi4_port_fifo_desc_t;
+  bub_fifo_desc_t aw;
+  bub_fifo_desc_t  w;
+  bub_fifo_desc_t  b;
+  bub_fifo_desc_t ar;
+  bub_fifo_desc_t  r;
+} baub_port_fifo_desc_t;
 
 // AXI4 Unix Bridges Fifo API
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,19 +54,19 @@ typedef struct {
 extern "C" {
 #endif
 
-axi4_port_fifo_desc_t* baub_fifo_OpenChannelsAsMaster
-  ( char* awSrc_path, size_t awSrc_bytesize, decoder_t awSrc_decoder
-  , char* wSrc_path, size_t wSrc_bytesize, decoder_t wSrc_decoder
-  , char* bSnk_path, size_t bSnk_bytesize, encoder_t bSnk_encoder
-  , char* arSrc_path, size_t arSrc_bytesize, decoder_t arSrc_decoder
-  , char* rSnk_path, size_t rSnk_bytesize, encoder_t rSnk_encoder );
-axi4_port_fifo_desc_t* baub_fifo_OpenChannelsAsSlave
-  ( char* awSnk_path, size_t awSnk_bytesize, encoder_t awSnk_encoder
-  , char* wSnk_path, size_t wSnk_bytesize, encoder_t wSnk_encoder
-  , char* bSrc_path, size_t bSrc_bytesize, decoder_t bSrc_decoder
-  , char* arSnk_path, size_t arSnk_bytesize, encoder_t arSnk_encoder
-  , char* rSrc_path, size_t rSrc_bytesize, decoder_t rSrc_decoder );
-void baub_fifo_Close (axi4_port_fifo_desc_t* desc);
+baub_port_fifo_desc_t* baub_fifo_OpenChannelsAsMaster
+  ( char* awSrc_path, size_t awSrc_bytesize, deserializer_t awSrc_deserializer
+  , char* wSrc_path, size_t wSrc_bytesize, deserializer_t wSrc_deserializer
+  , char* bSnk_path, size_t bSnk_bytesize, serializer_t bSnk_serializer
+  , char* arSrc_path, size_t arSrc_bytesize, deserializer_t arSrc_deserializer
+  , char* rSnk_path, size_t rSnk_bytesize, serializer_t rSnk_serializer );
+baub_port_fifo_desc_t* baub_fifo_OpenChannelsAsSlave
+  ( char* awSnk_path, size_t awSnk_bytesize, serializer_t awSnk_serializer
+  , char* wSnk_path, size_t wSnk_bytesize, serializer_t wSnk_serializer
+  , char* bSrc_path, size_t bSrc_bytesize, deserializer_t bSrc_deserializer
+  , char* arSnk_path, size_t arSnk_bytesize, serializer_t arSnk_serializer
+  , char* rSrc_path, size_t rSrc_bytesize, deserializer_t rSrc_deserializer );
+void baub_fifo_Close (baub_port_fifo_desc_t* desc);
 
 #define AXI4_(IDsz,ADDRsz,DATAsz,AWsz,Wsz,Bsz,ARsz,Rsz,sym) \
   baub_axi4_ ## IDsz ## _ ## ADDRsz ## _ ## DATAsz ## _ \
@@ -75,7 +75,7 @@ void baub_fifo_Close (axi4_port_fifo_desc_t* desc);
 
 #define DEF_AXI4_API(IDsz, ADDRsz, DATAsz, AWsz, Wsz, Bsz, ARsz, Rsz) \
   DEF_AXI4_HEPLERS_API(IDsz, ADDRsz, DATAsz, AWsz, Wsz, Bsz, ARsz, Rsz) \
-axi4_port_fifo_desc_t* \
+baub_port_fifo_desc_t* \
   AXI4_(IDsz, ADDRsz, DATAsz, AWsz, Wsz, Bsz, ARsz, Rsz, fifo_OpenAsMaster) \
   (char* path) { \
   size_t len = strlen (path) + 10; \
@@ -94,44 +94,44 @@ axi4_port_fifo_desc_t* \
   strcat ( bSnk_path,    "/bSink"); \
   strcat (arSrc_path, "/arSource"); \
   strcat ( rSnk_path,    "/rSink"); \
-  axi4_port_fifo_desc_t* mstrDesc = baub_fifo_OpenChannelsAsMaster \
+  baub_port_fifo_desc_t* mstrDesc = baub_fifo_OpenChannelsAsMaster \
     ( awSrc_path, AXI4_AW_BYTEsz(IDsz,ADDRsz,AWsz) \
-                , &AXI4_AW_(IDsz,ADDRsz,AWsz,decode_flit) \
-    ,  wSrc_path, AXI4_W_BYTEsz(DATAsz,Wsz), &AXI4_W_(DATAsz,Wsz,decode_flit) \
-    ,  bSnk_path, AXI4_B_BYTEsz(IDsz,Bsz), &AXI4_B_(IDsz,Bsz,encode_flit) \
+                , &AXI4_AW_(IDsz,ADDRsz,AWsz,deserialize_flit) \
+    ,  wSrc_path, AXI4_W_BYTEsz(DATAsz,Wsz), &AXI4_W_(DATAsz,Wsz,deserialize_flit) \
+    ,  bSnk_path, AXI4_B_BYTEsz(IDsz,Bsz), &AXI4_B_(IDsz,Bsz,serialize_flit) \
     , arSrc_path, AXI4_AR_BYTEsz(IDsz,ADDRsz,ARsz) \
-                , &AXI4_AR_(IDsz,ADDRsz,ARsz,decode_flit) \
+                , &AXI4_AR_(IDsz,ADDRsz,ARsz,deserialize_flit) \
     ,  rSnk_path, AXI4_R_BYTEsz(IDsz,DATAsz,Rsz) \
-                , &AXI4_R_(IDsz,DATAsz,Rsz,encode_flit) ); \
+                , &AXI4_R_(IDsz,DATAsz,Rsz,serialize_flit) ); \
   printf("opened axi4 master port:\n"); \
   printf( "\taw: %s, %0d bytes (from %0d bits), decoder: %p\n" \
         , awSrc_path \
         , AXI4_AW_BYTEsz(IDsz,ADDRsz,AWsz) \
         , AXI4_AW_BITsz(IDsz,ADDRsz,AWsz) \
-        , &AXI4_AW_(IDsz,ADDRsz,AWsz,decode_flit)); \
+        , &AXI4_AW_(IDsz,ADDRsz,AWsz,deserialize_flit)); \
   printf( "\tw: %s, %0d bytes (from %0d bits), decoder: %p\n" \
         , wSrc_path \
         , AXI4_W_BYTEsz(DATAsz,Wsz) \
         , AXI4_W_BITsz(DATAsz,Wsz) \
-        , &AXI4_W_(DATAsz,Wsz,decode_flit)); \
+        , &AXI4_W_(DATAsz,Wsz,deserialize_flit)); \
   printf( "\tb: %s, %0d bytes (from %0d bits), encoder: %p\n" \
         , bSnk_path \
         , AXI4_B_BYTEsz(IDsz,Bsz) \
         , AXI4_B_BITsz(IDsz,Bsz) \
-        , &AXI4_B_(IDsz,Bsz,encode_flit)); \
+        , &AXI4_B_(IDsz,Bsz,serialize_flit)); \
   printf( "\tar: %s, %0d bytes (from %0d bits), decoder: %p\n" \
         , arSrc_path \
         , AXI4_AR_BYTEsz(IDsz,ADDRsz,ARsz) \
         , AXI4_AR_BITsz(IDsz,ADDRsz,ARsz) \
-        , &AXI4_AR_(IDsz,ADDRsz,ARsz,decode_flit)); \
+        , &AXI4_AR_(IDsz,ADDRsz,ARsz,deserialize_flit)); \
   printf( "\tr: %s, %0d bytes (from %0d bits), encoder: %p\n" \
         , rSnk_path \
         , AXI4_R_BYTEsz(IDsz,DATAsz,Rsz) \
         , AXI4_R_BITsz(IDsz,DATAsz,Rsz) \
-        , &AXI4_R_(IDsz,DATAsz,Rsz,encode_flit)); \
+        , &AXI4_R_(IDsz,DATAsz,Rsz,serialize_flit)); \
   return mstrDesc; \
 } \
-axi4_port_fifo_desc_t* \
+baub_port_fifo_desc_t* \
   AXI4_(IDsz, ADDRsz, DATAsz, AWsz, Wsz, Bsz, ARsz, Rsz, fifo_OpenAsSlave) \
   (char* path) { \
   size_t len = strlen (path) + 10; \
@@ -150,41 +150,41 @@ axi4_port_fifo_desc_t* \
   strcat ( bSrc_path, "/bSource"); \
   strcat (arSnk_path,  "/arSink"); \
   strcat ( rSrc_path, "/rSource"); \
-  axi4_port_fifo_desc_t* slvDesc = baub_fifo_OpenChannelsAsSlave \
+  baub_port_fifo_desc_t* slvDesc = baub_fifo_OpenChannelsAsSlave \
     ( awSnk_path, AXI4_AW_BYTEsz(IDsz,ADDRsz,AWsz) \
-                , &AXI4_AW_(IDsz,ADDRsz,AWsz,encode_flit) \
-    ,  wSnk_path, AXI4_W_BYTEsz(DATAsz,Wsz), &AXI4_W_(DATAsz,Wsz,encode_flit) \
-    ,  bSrc_path, AXI4_B_BYTEsz(IDsz,Bsz), &AXI4_B_(IDsz,Bsz,decode_flit) \
+                , &AXI4_AW_(IDsz,ADDRsz,AWsz,serialize_flit) \
+    ,  wSnk_path, AXI4_W_BYTEsz(DATAsz,Wsz), &AXI4_W_(DATAsz,Wsz,serialize_flit) \
+    ,  bSrc_path, AXI4_B_BYTEsz(IDsz,Bsz), &AXI4_B_(IDsz,Bsz,deserialize_flit) \
     , arSnk_path, AXI4_AR_BYTEsz(IDsz,ADDRsz,ARsz) \
-                , &AXI4_AR_(IDsz,ADDRsz,ARsz,encode_flit) \
+                , &AXI4_AR_(IDsz,ADDRsz,ARsz,serialize_flit) \
     ,  rSrc_path, AXI4_R_BYTEsz(IDsz,DATAsz,Rsz) \
-                , &AXI4_R_(IDsz,DATAsz,Rsz,decode_flit) ); \
+                , &AXI4_R_(IDsz,DATAsz,Rsz,deserialize_flit) ); \
   printf("opened axi4 slave port:\n"); \
   printf( "\taw: %s, %0d bytes (from %0d bits), encoder: %p\n" \
         , awSnk_path \
         , AXI4_AW_BYTEsz(IDsz,ADDRsz,AWsz) \
         , AXI4_AW_BITsz(IDsz,ADDRsz,AWsz) \
-        , &AXI4_AW_(IDsz,ADDRsz,AWsz,encode_flit)); \
+        , &AXI4_AW_(IDsz,ADDRsz,AWsz,serialize_flit)); \
   printf( "\tw: %s, %0d bytes (from %0d bits), encoder: %p\n" \
         , wSnk_path \
         , AXI4_W_BYTEsz(DATAsz,Wsz) \
         , AXI4_W_BITsz(DATAsz,Wsz) \
-        , &AXI4_W_(DATAsz,Wsz,encode_flit)); \
+        , &AXI4_W_(DATAsz,Wsz,serialize_flit)); \
   printf( "\tb: %s, %0d bytes (from %0d bits), decoder: %p\n" \
         , bSrc_path \
         , AXI4_B_BYTEsz(IDsz,Bsz) \
         , AXI4_B_BITsz(IDsz,Bsz) \
-        , &AXI4_B_(IDsz,Bsz,decode_flit)); \
+        , &AXI4_B_(IDsz,Bsz,deserialize_flit)); \
   printf( "\tar: %s, %0d bytes (from %0d bits), encoder: %p\n" \
         , arSnk_path \
         , AXI4_AR_BYTEsz(IDsz,ADDRsz,ARsz) \
         , AXI4_AR_BITsz(IDsz,ADDRsz,ARsz) \
-        , &AXI4_AR_(IDsz,ADDRsz,ARsz,encode_flit)); \
+        , &AXI4_AR_(IDsz,ADDRsz,ARsz,serialize_flit)); \
   printf( "\tr: %s, %0d bytes (from %0d bits), decoder: %p\n" \
         , rSrc_path \
         , AXI4_R_BYTEsz(IDsz,DATAsz,Rsz) \
         , AXI4_R_BITsz(IDsz,DATAsz,Rsz) \
-        , &AXI4_R_(IDsz,DATAsz,Rsz,decode_flit)); \
+        , &AXI4_R_(IDsz,DATAsz,Rsz,deserialize_flit)); \
   return slvDesc; \
 }
 

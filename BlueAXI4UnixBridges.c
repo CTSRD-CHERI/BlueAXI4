@@ -31,49 +31,51 @@
 #include <BlueUnixBridges.h>
 #include <BlueAXI4UnixBridges.h>
 
-inline axi4_port_fifo_desc_t* baub_fifo_OpenChannelsAsMaster
-  ( char* awSrc_path, size_t awSrc_bytesize, decoder_t awSrc_decoder
-  , char* wSrc_path, size_t wSrc_bytesize, decoder_t wSrc_decoder
-  , char* bSnk_path, size_t bSnk_bytesize, encoder_t bSnk_encoder
-  , char* arSrc_path, size_t arSrc_bytesize, decoder_t arSrc_decoder
-  , char* rSnk_path, size_t rSnk_bytesize, encoder_t rSnk_encoder ) {
-  axi4_port_fifo_desc_t* desc =
-    (axi4_port_fifo_desc_t*) malloc (sizeof (axi4_port_fifo_desc_t));
-  desc->aw =
-    bub_fifo_OpenAsConsumer (awSrc_path, awSrc_bytesize, awSrc_decoder);
+inline baub_port_fifo_desc_t* baub_fifo_OpenChannelsAsMaster
+  ( char* awSrc_path, size_t awSrc_bytesize, deserializer_t awSrc_deserializer
+  , char* wSrc_path, size_t wSrc_bytesize, deserializer_t wSrc_deserializer
+  , char* bSnk_path, size_t bSnk_bytesize, serializer_t bSnk_serializer
+  , char* arSrc_path, size_t arSrc_bytesize, deserializer_t arSrc_deserializer
+  , char* rSnk_path, size_t rSnk_bytesize, serializer_t rSnk_serializer ) {
+  baub_port_fifo_desc_t* desc =
+    (baub_port_fifo_desc_t*) malloc (sizeof (baub_port_fifo_desc_t));
+  desc->aw = bub_fifo_OpenForConsumption ( awSrc_path
+                                         , awSrc_bytesize
+                                         , awSrc_deserializer );
   desc->w =
-    bub_fifo_OpenAsConsumer (wSrc_path, wSrc_bytesize, wSrc_decoder);
+    bub_fifo_OpenForConsumption (wSrc_path, wSrc_bytesize, wSrc_deserializer);
   desc->b =
-    bub_fifo_OpenAsProducer (bSnk_path, bSnk_bytesize, bSnk_encoder);
-  desc->ar =
-    bub_fifo_OpenAsConsumer (arSrc_path, arSrc_bytesize, arSrc_decoder);
+    bub_fifo_OpenForProduction (bSnk_path, bSnk_bytesize, bSnk_serializer);
+  desc->ar = bub_fifo_OpenForConsumption ( arSrc_path
+                                         , arSrc_bytesize
+                                         , arSrc_deserializer );
   desc->r =
-    bub_fifo_OpenAsProducer (rSnk_path, rSnk_bytesize, rSnk_encoder);
+    bub_fifo_OpenForProduction (rSnk_path, rSnk_bytesize, rSnk_serializer);
   return desc;
 }
 
-inline axi4_port_fifo_desc_t* baub_fifo_OpenChannelsAsSlave
-  ( char* awSnk_path, size_t awSnk_bytesize, encoder_t awSnk_encoder
-  , char* wSnk_path, size_t wSnk_bytesize, encoder_t wSnk_encoder
-  , char* bSrc_path, size_t bSrc_bytesize, decoder_t bSrc_decoder
-  , char* arSnk_path, size_t arSnk_bytesize, encoder_t arSnk_encoder
-  , char* rSrc_path, size_t rSrc_bytesize, decoder_t rSrc_decoder ) {
-  axi4_port_fifo_desc_t* desc =
-    (axi4_port_fifo_desc_t*) malloc (sizeof (axi4_port_fifo_desc_t));
+inline baub_port_fifo_desc_t* baub_fifo_OpenChannelsAsSlave
+  ( char* awSnk_path, size_t awSnk_bytesize, serializer_t awSnk_serializer
+  , char* wSnk_path, size_t wSnk_bytesize, serializer_t wSnk_serializer
+  , char* bSrc_path, size_t bSrc_bytesize, deserializer_t bSrc_deserializer
+  , char* arSnk_path, size_t arSnk_bytesize, serializer_t arSnk_serializer
+  , char* rSrc_path, size_t rSrc_bytesize, deserializer_t rSrc_deserializer ) {
+  baub_port_fifo_desc_t* desc =
+    (baub_port_fifo_desc_t*) malloc (sizeof (baub_port_fifo_desc_t));
   desc->aw =
-    bub_fifo_OpenAsProducer (awSnk_path, awSnk_bytesize, awSnk_encoder);
+    bub_fifo_OpenForProduction (awSnk_path, awSnk_bytesize, awSnk_serializer);
   desc->w =
-    bub_fifo_OpenAsProducer (wSnk_path, wSnk_bytesize, wSnk_encoder);
+    bub_fifo_OpenForProduction (wSnk_path, wSnk_bytesize, wSnk_serializer);
   desc->b =
-    bub_fifo_OpenAsConsumer (bSrc_path, bSrc_bytesize, bSrc_decoder);
+    bub_fifo_OpenForConsumption (bSrc_path, bSrc_bytesize, bSrc_deserializer);
   desc->ar =
-    bub_fifo_OpenAsProducer (arSnk_path, arSnk_bytesize, arSnk_encoder);
+    bub_fifo_OpenForProduction (arSnk_path, arSnk_bytesize, arSnk_serializer);
   desc->r =
-    bub_fifo_OpenAsConsumer (rSrc_path, rSrc_bytesize, rSrc_decoder);
+    bub_fifo_OpenForConsumption (rSrc_path, rSrc_bytesize, rSrc_deserializer);
   return desc;
 }
 
-inline void baub_fifo_Close (axi4_port_fifo_desc_t* desc) {
+inline void baub_fifo_Close (baub_port_fifo_desc_t* desc) {
   bub_fifo_Close (desc->aw);
   bub_fifo_Close (desc->w);
   bub_fifo_Close (desc->b);

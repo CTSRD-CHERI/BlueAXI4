@@ -6,7 +6,7 @@
 DEF_AXI4_API(2, 32, 64, 0, 0, 0, 0, 0)
 
 ////////////////////////////////////////////////////////////////////////////////
-typedef struct { fifo_desc_t* ff; int n; } arArg_t;
+typedef struct { bub_fifo_desc_t ff; int n; } arArg_t;
 void* arTask (void* argPtr) {
   arArg_t* arg = (arArg_t*) argPtr;
   uint8_t arid = 0;
@@ -33,14 +33,14 @@ void* arTask (void* argPtr) {
     while (!bub_fifo_Produce (arg->ff, (void*) &arflit));
     AXI4_AR_(2,32,0,print_flit)(&arflit);
     printf ("\n");
-    AXI4_AR_(2,32,0,encode_flit)(&arflit, bitBag);
+    AXI4_AR_(2,32,0,serialize_flit)(bitBag, &arflit);
     bitHexDump(bitBag, AXI4_AR_BITsz(2,32,0));
     printf ("\n");
   }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-typedef struct { fifo_desc_t* ff; int n; } rArg_t;
+typedef struct { bub_fifo_desc_t ff; int n; } rArg_t;
 void* rTask (void* argPtr) {
   rArg_t* arg = (rArg_t*) argPtr;
   t_axi4_rflit* rflit = AXI4_R_(2,64,0,create_flit)(NULL);
@@ -59,7 +59,7 @@ int main (int argc, char** argv) {
     printf ("usage: %s PORT_DIR N_READ N_WRITE (argc: %d)\n", argv[0], argc);
     exit (EXIT_FAILURE);
   }
-  axi4_port_fifo_desc_t* slvDesc =
+  baub_port_fifo_desc_t* slvDesc =
     AXI4_(2, 32, 64, 0, 0, 0, 0, 0, fifo_OpenAsSlave)(argv[1]);
   printf("argv[1]: %s\n", argv[1]);
   printf("argv[2]: %s\n", argv[2]);

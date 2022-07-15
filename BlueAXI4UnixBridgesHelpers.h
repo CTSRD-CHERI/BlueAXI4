@@ -60,10 +60,10 @@
 //
 // - PFX_get_<fieldname> (uint8_t* field, const uint8_t* rawflit)
 // - PFX_set_<fieldname> (uint8_t* rawflit, const uint8_t* field)
-// - PFX_get (t_axi4_<CHANNEL>flit* flit, const uint8_t* raw_flit)
-// - PFX_set (uint8_t* raw_flit, const t_axi4_<CHANNEL>flit* flit)
-// - PFX_decode_flit (const uint8_t* rawbytes, void* dest)
-// - PFX_encode_flit (const void* src, uint8_t* rawbytes)
+// - PFX_get_flit (t_axi4_<CHANNEL>flit* flit, const uint8_t* raw_flit)
+// - PFX_set_flit (uint8_t* raw_flit, const t_axi4_<CHANNEL>flit* flit)
+// - PFX_deserialize_flit (void* flit, const uint8_t* raw_flit)
+// - PFX_serialize_flit (uint8_t* raw_flit, const void* flit)
 // - PFX_create_flit (const uint8_t* raw_flit)
 // - PFX_destroy_flit (t_axi4_<CHANNEL>flit* flit)
 // - PFX_print_flit (const t_axi4_<CHANNEL>flit* flit)
@@ -416,7 +416,7 @@ void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## id) \
 \
 \
 \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_flit) \
   (t_axi4_a ## x ## flit* a ## x ## flit, const uint8_t* raw_a ## x ## flit) { \
   _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## user) \
     (a ## x ## flit->a ## x ## user, raw_a ## x ## flit); \
@@ -441,7 +441,7 @@ void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get) \
   _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## id) \
     (a ## x ## flit->a ## x ## id, raw_a ## x ## flit); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_flit) \
   (uint8_t* raw_a ## x ## flit, const t_axi4_a ## x ## flit* a ## x ## flit) { \
   _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## user) \
     (raw_a ## x ## flit, a ## x ## flit->a ## x ## user); \
@@ -466,13 +466,13 @@ void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set) \
   _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## id) \
     (raw_a ## x ## flit, a ## x ## flit->a ## x ## id); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,decode_flit) \
-  (const uint8_t* rawbytes, void* dest) { \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get) (dest, rawbytes); \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,deserialize_flit) \
+  (void* dest, const uint8_t* rawbytes) { \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_flit) (dest, rawbytes); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,encode_flit) \
-  (const void* src, uint8_t* rawbytes) { \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set) (rawbytes, src); \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,serialize_flit) \
+  (uint8_t* rawbytes, const void* src) { \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_flit) (rawbytes, src); \
 } \
 t_axi4_a ## x ## flit* _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,create_flit) \
   (const uint8_t* raw_a ## x ## flit) { \
@@ -485,7 +485,7 @@ t_axi4_a ## x ## flit* _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,create_flit) \
   a ## x ## flit->a ## x ## id = \
     (uint8_t*) malloc (_DIV8CEIL(IDsz) * sizeof(uint8_t)); \
   if (raw_a ## x ## flit) { \
-    _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get) \
+    _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_flit) \
       (a ## x ## flit, raw_a ## x ## flit); \
   } \
   return a ## x ## flit; \
@@ -618,27 +618,27 @@ void AXI4_W_(DATAsz,WUSERsz,set_wdata) \
 \
 \
 \
-void AXI4_W_(DATAsz,WUSERsz,get) \
+void AXI4_W_(DATAsz,WUSERsz,get_flit) \
   (t_axi4_wflit* wflit, const uint8_t* raw_wflit) { \
   AXI4_W_(DATAsz,WUSERsz,get_wuser) (wflit->wuser, raw_wflit); \
   AXI4_W_(DATAsz,WUSERsz,get_wlast) (&wflit->wlast, raw_wflit); \
   AXI4_W_(DATAsz,WUSERsz,get_wstrb) (wflit->wstrb, raw_wflit); \
   AXI4_W_(DATAsz,WUSERsz,get_wdata) (wflit->wdata, raw_wflit); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,set) \
+void AXI4_W_(DATAsz,WUSERsz,set_flit) \
   (uint8_t* raw_wflit, const t_axi4_wflit* wflit) { \
   AXI4_W_(DATAsz,WUSERsz,set_wuser) (raw_wflit, wflit->wuser); \
   AXI4_W_(DATAsz,WUSERsz,set_wlast) (raw_wflit, &wflit->wlast); \
   AXI4_W_(DATAsz,WUSERsz,set_wstrb) (raw_wflit, wflit->wstrb); \
   AXI4_W_(DATAsz,WUSERsz,set_wdata) (raw_wflit, wflit->wdata); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,decode_flit) \
-  (const uint8_t* rawbytes, void* dest) { \
-  AXI4_W_(DATAsz,WUSERsz,get) (dest, rawbytes); \
+void AXI4_W_(DATAsz,WUSERsz,deserialize_flit) \
+  (void* dest, const uint8_t* rawbytes) { \
+  AXI4_W_(DATAsz,WUSERsz,get_flit) (dest, rawbytes); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,encode_flit) \
-  (const void* src, uint8_t* rawbytes) { \
-  AXI4_W_(DATAsz,WUSERsz,set) (rawbytes, src); \
+void AXI4_W_(DATAsz,WUSERsz,serialize_flit) \
+  (uint8_t* rawbytes, const void* src) { \
+  AXI4_W_(DATAsz,WUSERsz,set_flit) (rawbytes, src); \
 } \
 t_axi4_wflit* AXI4_W_(DATAsz,WUSERsz,create_flit) \
   (const uint8_t* raw_wflit) { \
@@ -648,7 +648,7 @@ t_axi4_wflit* AXI4_W_(DATAsz,WUSERsz,create_flit) \
     (uint8_t*) malloc (_DIV8CEIL(_DIV8CEIL(DATAsz)) * sizeof(uint8_t)); \
   wflit->wdata = (uint8_t*) malloc (_DIV8CEIL(DATAsz) * sizeof(uint8_t)); \
   if (raw_wflit) { \
-    AXI4_W_(DATAsz,WUSERsz,get) (wflit, raw_wflit); \
+    AXI4_W_(DATAsz,WUSERsz,get_flit) (wflit, raw_wflit); \
   } \
   return wflit; \
 } \
@@ -732,32 +732,32 @@ void AXI4_B_(IDsz,BUSERsz,set_bid) (uint8_t* bflit, const uint8_t* bid) { \
 \
 \
 \
-void AXI4_B_(IDsz,BUSERsz,get) \
+void AXI4_B_(IDsz,BUSERsz,get_flit) \
   (t_axi4_bflit* bflit, const uint8_t* raw_bflit) { \
   AXI4_B_(IDsz,BUSERsz,get_buser) (bflit->buser, raw_bflit); \
   AXI4_B_(IDsz,BUSERsz,get_bresp) (&bflit->bresp, raw_bflit); \
   AXI4_B_(IDsz,BUSERsz,get_bid) (bflit->bid, raw_bflit); \
 } \
-void AXI4_B_(IDsz,BUSERsz,set) \
+void AXI4_B_(IDsz,BUSERsz,set_flit) \
   (uint8_t* raw_bflit, const t_axi4_bflit* bflit) { \
   AXI4_B_(IDsz,BUSERsz,set_buser) (raw_bflit, bflit->buser); \
   AXI4_B_(IDsz,BUSERsz,set_bresp) (raw_bflit, &bflit->bresp); \
   AXI4_B_(IDsz,BUSERsz,set_bid) (raw_bflit, bflit->bid); \
 } \
-void AXI4_B_(IDsz,BUSERsz,decode_flit) \
-  (const uint8_t* rawbytes, void* dest) { \
-  AXI4_B_(IDsz,BUSERsz,get) (dest, rawbytes); \
+void AXI4_B_(IDsz,BUSERsz,deserialize_flit) \
+  (void* dest, const uint8_t* rawbytes) { \
+  AXI4_B_(IDsz,BUSERsz,get_flit) (dest, rawbytes); \
 } \
-void AXI4_B_(IDsz,BUSERsz,encode_flit) \
-  (const void* src, uint8_t* rawbytes) { \
-  AXI4_B_(IDsz,BUSERsz,set) (rawbytes, src); \
+void AXI4_B_(IDsz,BUSERsz,serialize_flit) \
+  (uint8_t* rawbytes, const void* src) { \
+  AXI4_B_(IDsz,BUSERsz,set_flit) (rawbytes, src); \
 } \
 t_axi4_bflit* AXI4_B_(IDsz,BUSERsz,create_flit) (const uint8_t* raw_bflit) { \
   t_axi4_bflit* bflit = (t_axi4_bflit*) malloc (sizeof (t_axi4_bflit)); \
   bflit->buser = (uint8_t*) malloc (_DIV8CEIL(BUSERsz) * sizeof(uint8_t)); \
   bflit->bid = (uint8_t*) malloc (_DIV8CEIL(IDsz) * sizeof(uint8_t)); \
   if (raw_bflit) { \
-    AXI4_B_(IDsz,BUSERsz,get) (bflit, raw_bflit); \
+    AXI4_B_(IDsz,BUSERsz,get_flit) (bflit, raw_bflit); \
   } \
   return bflit; \
 } \
@@ -893,7 +893,7 @@ void AXI4_R_(IDsz,DATAsz,RUSERsz,set_rid) \
 \
 \
 \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,get) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,get_flit) \
   (t_axi4_rflit* rflit, const uint8_t* raw_rflit) { \
   AXI4_R_(IDsz,DATAsz,RUSERsz,get_ruser) (rflit->ruser, raw_rflit); \
   AXI4_R_(IDsz,DATAsz,RUSERsz,get_rlast) (&rflit->rlast, raw_rflit); \
@@ -901,7 +901,7 @@ void AXI4_R_(IDsz,DATAsz,RUSERsz,get) \
   AXI4_R_(IDsz,DATAsz,RUSERsz,get_rdata) (rflit->rdata, raw_rflit); \
   AXI4_R_(IDsz,DATAsz,RUSERsz,get_rid) (rflit->rid, raw_rflit); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,set) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,set_flit) \
   (uint8_t* raw_rflit, const t_axi4_rflit* rflit) { \
   AXI4_R_(IDsz,DATAsz,RUSERsz,set_ruser) (raw_rflit, rflit->ruser); \
   AXI4_R_(IDsz,DATAsz,RUSERsz,set_rlast) (raw_rflit, &rflit->rlast); \
@@ -909,13 +909,13 @@ void AXI4_R_(IDsz,DATAsz,RUSERsz,set) \
   AXI4_R_(IDsz,DATAsz,RUSERsz,set_rdata) (raw_rflit, rflit->rdata); \
   AXI4_R_(IDsz,DATAsz,RUSERsz,set_rid) (raw_rflit, rflit->rid); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,decode_flit) \
-  (const uint8_t* rawbytes, void* dest) { \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,get) (dest, rawbytes); \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,deserialize_flit) \
+  (void* dest, const uint8_t* rawbytes) { \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,get_flit) (dest, rawbytes); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,encode_flit) \
-  (const void* src, uint8_t* rawbytes) { \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,set) (rawbytes, src); \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,serialize_flit) \
+  (uint8_t* rawbytes, const void* src) { \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,set_flit) (rawbytes, src); \
 } \
 t_axi4_rflit* AXI4_R_(IDsz,DATAsz,RUSERsz,create_flit) \
   (const uint8_t* raw_rflit) { \
@@ -924,7 +924,7 @@ t_axi4_rflit* AXI4_R_(IDsz,DATAsz,RUSERsz,create_flit) \
   rflit->rdata = (uint8_t*) malloc (_DIV8CEIL(DATAsz) * sizeof(uint8_t)); \
   rflit->rid = (uint8_t*) malloc (_DIV8CEIL(IDsz) * sizeof(uint8_t)); \
   if (raw_rflit) { \
-    AXI4_R_(IDsz,DATAsz,RUSERsz,get) (rflit, raw_rflit); \
+    AXI4_R_(IDsz,DATAsz,RUSERsz,get_flit) (rflit, raw_rflit); \
   } \
   return rflit; \
 } \
