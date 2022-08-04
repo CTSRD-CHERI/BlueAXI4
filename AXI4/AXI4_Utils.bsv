@@ -228,6 +228,18 @@ function AXI4_Master #(a, b, c, d_, e_, f_, g_, h_)
 
 //------------------------------------------------------------------------------
 
+function AXI4_Slave #(id_in, b, c, d, e, f, g, h)
+  mapAXI4_Slave_id ( function Bit #(id_out) fReq (Bit #(id_in)  x)
+                   , function Bit #(id_in)  fRsp (Bit #(id_out) x)
+                   , AXI4_Slave #(id_out, b, c, d, e, f, g, h) s) =
+  interface AXI4_Slave;
+    interface aw = mapSink   (mapAXI4_AWFlit_awid (fReq), s.aw);
+    interface  w = s.w;
+    interface  b = mapSource (mapAXI4_BFlit_bid   (fRsp), s.b);
+    interface ar = mapSink   (mapAXI4_ARFlit_arid (fReq), s.ar);
+    interface  r = mapSource (mapAXI4_RFlit_rid   (fRsp), s.r);
+  endinterface;
+
 function AXI4_Slave #(a, addr_in, c, d, e, f, g, h)
   mapAXI4_Slave_addr ( function Bit #(addr_out) fun (Bit #(addr_in) x)
                      , AXI4_Slave #(a, addr_out, c, d, e, f, g, h) s) =
@@ -286,6 +298,14 @@ function AXI4_Master #(a, b, c, d_, e_, f_, g_, h_)
     (constFn (0), constFn (0), constFn (0), constFn (0), constFn (0), m);
 
 //------------------------------------------------------------------------------
+
+function AXI4_Slave #(id_in, b, c, d, e, f, g, h)
+  prepend_AXI4_Slave_id ( Bit #(t_upper_sz) upperBits
+                        , AXI4_Slave #(id_out, b, c, d, e, f, g, h) s)
+  provisos (Add #(t_upper_sz, id_in, id_out)); // id_out = t_upper_sz + id_in
+  function fun (x) = {upperBits, x};
+  return mapAXI4_Slave_id (fun, truncate, s);
+endfunction
 
 function AXI4_Slave #(a, addr_in, c, d, e, f, g, h)
   truncate_AXI4_Slave_addr (AXI4_Slave #(a, addr_out, c, d, e, f, g, h) s)
@@ -838,40 +858,49 @@ endmodule
 // AXI4 Shim Master <-> Slave //
 ////////////////////////////////////////////////////////////////////////////////
 
-// XXX
-// Macro to work around the fact that we cannot pass FIFOF module constructor
-// and use it for different channels with different types (need Rank2Types)...?
-`define defAXI4ShimFIFOFs (name, mkAWFF, mkWFF, mkBFF, mkARFF, mkRFF)\
-module mkAXI4Shim``name (AXI4_Shim#(a, b, c, d, e, f, g, h));\
-  let awff <- mkAWFF;\
-  let  wff <- mkWFF;\
-  let  bff <- mkBFF;\
-  let arff <- mkARFF;\
-  let  rff <- mkRFF;\
-  method clear = action\
-    awff.clear;\
-    wff.clear;\
-    bff.clear;\
-    arff.clear;\
-    rff.clear;\
-  endaction;\
-  interface master = interface AXI4_Master;\
-    interface aw = toSource(awff);\
-    interface  w = toSource(wff);\
-    interface  b = toSink(bff);\
-    interface ar = toSource(arff);\
-    interface  r = toSink(rff);\
-  endinterface;\
-  interface slave = interface AXI4_Slave;\
-    interface aw = toSink(awff);\
-    interface  w = toSink(wff);\
-    interface  b = toSource(bff);\
-    interface ar = toSink(arff);\
-    interface  r = toSource(rff);\
-  endinterface;\
+module mkAXI4Shim_core #(
+    function module #(FIFOF #(AXI4_AWFlit #(a, b, d))) mkAWFF ()
+  , function module #(FIFOF #(AXI4_WFlit #(c, e))) mkWFF ()
+  , function module #(FIFOF #(AXI4_BFlit #(a, f))) mkBFF ()
+  , function module #(FIFOF #(AXI4_ARFlit #(a, b, g))) mkARFF ()
+  , function module #(FIFOF #(AXI4_RFlit #(a, c, h))) mkRFF () )
+  (AXI4_Shim#(a, b, c, d, e, f, g, h));
+  let awff <- mkAWFF;
+  let  wff <- mkWFF;
+  let  bff <- mkBFF;
+  let arff <- mkARFF;
+  let  rff <- mkRFF;
+  method clear = action
+    awff.clear;
+    wff.clear;
+    bff.clear;
+    arff.clear;
+    rff.clear;
+  endaction;
+  interface master = interface AXI4_Master;
+    interface aw = toSource(awff);
+    interface  w = toSource(wff);
+    interface  b = toSink(bff);
+    interface ar = toSource(arff);
+    interface  r = toSink(rff);
+  endinterface;
+  interface slave = interface AXI4_Slave;
+    interface aw = toSink(awff);
+    interface  w = toSink(wff);
+    interface  b = toSource(bff);
+    interface ar = toSink(arff);
+    interface  r = toSource(rff);
+  endinterface;
 endmodule
 
-`define defAXI4ShimFIFOF (name, mkFF) `defAXI4ShimFIFOFs(name, mkFF, mkFF, mkFF, mkFF, mkFF)
+`define defAXI4ShimFIFOFs (name, mkAWFF, mkWFF, mkBFF, mkARFF, mkRFF)\
+module mkAXI4Shim``name (AXI4_Shim#(a, b, c, d, e, f, g, h));\
+  let shim <- mkAXI4Shim_core (mkAWFF, mkWFF, mkBFF, mkARFF, mkRFF);\
+  return shim;\
+endmodule
+
+`define defAXI4ShimFIFOF (name, mkFF)\
+`defAXI4ShimFIFOFs(name, mkFF, mkFF, mkFF, mkFF, mkFF)
 
 `defAXI4ShimFIFOF(BypassFIFOF, mkBypassFIFOF)
 `defAXI4ShimFIFOF(BypassFF1, mkSizedBypassFIFOF(1))
