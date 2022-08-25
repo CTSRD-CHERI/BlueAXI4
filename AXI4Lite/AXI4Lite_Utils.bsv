@@ -33,6 +33,7 @@ import AXI4Lite_W_Utils :: *;
 import AXI4Lite_B_Utils :: *;
 import AXI4Lite_AR_Utils :: *;
 import AXI4Lite_R_Utils :: *;
+import AXI4_Common_Types :: *;
 
 // BlueStuff import
 import Routable :: *;
@@ -406,3 +407,22 @@ function AXI4Lite_Slave#(a,b,c,d,e,f,g) guard_AXI4Lite_Slave
     interface ar = guardSink(raw.ar, block);
     interface r  = guardSource(raw.r, block);
   endinterface;
+
+/////////////////
+// Error Slave //
+////////////////////////////////////////////////////////////////////////////////
+
+module mkError_AXI4Lite_Slave (AXI4Lite_Slave#(a,b,c,d,e,f,g));
+  match {.awSnk, .bSrc} <-
+    mkReqRspPre (mkFIFOF, constFn (AXI4Lite_BFlit { bresp: SLVERR
+                                                  , buser: ? }));
+  match {.arSnk, .rSrc} <-
+    mkReqRspPre (mkFIFOF, constFn (AXI4Lite_RFlit { rdata: ?
+                                                  , rresp: SLVERR
+                                                  , ruser: ? }));
+  interface aw = awSnk;
+  interface w = nullSink;
+  interface b = bSrc;
+  interface ar = arSnk;
+  interface r = rSrc;
+endmodule
