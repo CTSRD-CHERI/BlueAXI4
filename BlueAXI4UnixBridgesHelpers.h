@@ -48,15 +48,15 @@
 // - AXI4_R_{BIT,BYTE}sz(IDsz,DATAsz,RUSERsz)
 //
 // Some parametric macros to add the API prefix to a symbol name:
-// - AXI4_AW_(IDsz,ADDRsz,AWUSERsz,sym)
-// - AXI4_W_(DATAsz,WUSERsz,sym)
-// - AXI4_B_(IDsz,BUSERsz,sym)
-// - AXI4_AR_(IDsz,ADDRsz,ARUSERsz,sym)
-// - AXI4_R_(IDsz,DATAsz,RUSERsz,sym)
+// - AXI4_AW_(IDsz,ADDRsz,AWUSERsz,defId,sym)
+// - AXI4_W_(DATAsz,WUSERsz,defId,sym)
+// - AXI4_B_(IDsz,BUSERsz,defId,sym)
+// - AXI4_AR_(IDsz,ADDRsz,ARUSERsz,defId,sym)
+// - AXI4_R_(IDsz,DATAsz,RUSERsz,defId,sym)
 //
 // A DEF_AXI4_HELPERS_API macro which defines the API functions for the given
 // parameters (each function name starts with a parameterized prefix PFX of the
-// form "baub_axi4_{aw,w,b,ar,r}_<params>")
+// form "baub_axi4_{aw,w,b,ar,r}_<params & defId>")
 //
 // - PFX_get_<fieldname> (uint8_t* field, const uint8_t* rawflit)
 // - PFX_set_<fieldname> (uint8_t* rawflit, const uint8_t* field)
@@ -215,6 +215,7 @@ typedef struct {
 // FIELD_N+1_BYTE_IDX = FIELD_N_BYTE_IDX+(FIELD_N_BIT_IDX+FIELD_N_BIT_SIZE)/8
 // FIELD_N+1_BIT_IDX  = (FIELD_N_BIT_IDX+FIELD_N_BIT_SIZE)%8
 
+// individual field offsets
 #define _AxUSER_BYTE_IDX(X,Y,Z) 0
 #define _AxUSER_BIT_IDX(X,Y,Z) 0
 #define _AxREGION_BYTE_IDX(X,Y,AxUSERsz) _DIV8(AxUSERsz)
@@ -247,86 +248,88 @@ typedef struct {
   (_AxADDR_BYTE_IDX(X,ADDRsz,Z)+_DIV8(_AxADDR_BIT_IDX(X,ADDRsz,Z)+(ADDRsz)))
 #define _AxID_BIT_IDX(X,ADDRsz,Z) _MOD8(_AxADDR_BIT_IDX(X,ADDRsz,Z)+(ADDRsz))
 
+// overall flit size
 #define _AXI4_Ax_BITsz(IDsz,Y,Z) \
   (_MUL8(_AxID_BYTE_IDX(IDsz,Y,Z))+_AxID_BIT_IDX(IDsz,Y,Z)+(IDsz))
-
 #define _AXI4_Ax_BYTEsz(X,Y,Z) _DIV8CEIL(_AXI4_Ax_BITsz(X,Y,Z))
 
-#define _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,sym) \
-  baub_axi4_a ## x ## _ ## IDsz ## _ ## ADDRsz ## _ ## AxUSERsz ## _ ## sym
+// API prefix macro
+#define _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,sym) \
+  baub_axi4_a ## x ## _ ## IDsz ## _ ## ADDRsz ## _ ## AxUSERsz \
+              ## _ ## defId ## _ ## sym
 
-#define _DEF_AXI4_AxFlit(x, IDsz, ADDRsz, AxUSERsz) \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## user) \
+#define _DEF_AXI4_AxFlit(x, IDsz, ADDRsz, AxUSERsz, defId) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## user) \
   (uint8_t* a ## x ## user, const uint8_t* a ## x ## flit) { \
   bitmemcpy ( a ## x ## user, 0 \
             , a ## x ## flit + _AxUSER_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxUSER_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , AxUSERsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## region) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## region) \
   (uint8_t* a ## x ## region, const uint8_t* a ## x ## flit) { \
   bitmemcpy ( a ## x ## region, 0 \
             , a ## x ## flit + _AxREGION_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxREGION_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _REGIONsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## qos) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## qos) \
   (uint8_t* a ## x ## qos, const uint8_t* a ## x ## flit) { \
   bitmemcpy ( a ## x ## qos, 0 \
             , a ## x ## flit + _AxQOS_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxQOS_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _QOSsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## prot) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## prot) \
   (uint8_t* a ## x ## prot, const uint8_t* a ## x ## flit) { \
   bitmemcpy ( a ## x ## prot, 0 \
             , a ## x ## flit + _AxPROT_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxPROT_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _PROTsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## cache) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## cache) \
   (uint8_t* a ## x ## cache, const uint8_t* a ## x ## flit) { \
   bitmemcpy ( a ## x ## cache, 0 \
             , a ## x ## flit + _AxCACHE_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxCACHE_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _CACHEsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## lock) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## lock) \
   (uint8_t* a ## x ## lock, const uint8_t* a ## x ## flit) { \
   bitmemcpy ( a ## x ## lock, 0 \
             , a ## x ## flit + _AxLOCK_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxLOCK_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _LOCKsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## burst) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## burst) \
   (uint8_t* a ## x ## burst, const uint8_t* a ## x ## flit) { \
   bitmemcpy ( a ## x ## burst, 0 \
             , a ## x ## flit + _AxBURST_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxBURST_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _BURSTsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## size) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## size) \
   (uint8_t* a ## x ## size, const uint8_t* a ## x ## flit) { \
   bitmemcpy ( a ## x ## size, 0 \
             , a ## x ## flit + _AxSIZE_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxSIZE_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _SIZEsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## len) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## len) \
   (uint8_t* a ## x ## len, const uint8_t* a ## x ## flit) { \
   bitmemcpy ( a ## x ## len, 0 \
             , a ## x ## flit + _AxLEN_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxLEN_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _LENsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## addr) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## addr) \
   (uint8_t* a ## x ## addr, const uint8_t* a ## x ## flit) { \
     bitmemcpy( a ## x ## addr, 0 \
              , a ## x ## flit + _AxADDR_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
              , _AxADDR_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
              , ADDRsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## id) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## id) \
   (uint8_t* a ## x ## id, const uint8_t* a ## x ## flit) { \
     bitmemcpy( a ## x ## id, 0 \
              , a ## x ## flit + _AxID_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
@@ -336,77 +339,77 @@ void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## id) \
 \
 \
 \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## user) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## user) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## user) { \
   bitmemcpy ( a ## x ## flit + _AxUSER_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxUSER_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , a ## x ## user, 0 \
             , AxUSERsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## region) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## region) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## region) { \
   bitmemcpy ( a ## x ## flit + _AxREGION_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxREGION_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , a ## x ## region, 0 \
             , _REGIONsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## qos) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## qos) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## qos) { \
   bitmemcpy ( a ## x ## flit + _AxQOS_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxQOS_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , a ## x ## qos, 0 \
             , _QOSsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## prot) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## prot) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## prot) { \
   bitmemcpy ( a ## x ## flit + _AxPROT_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxPROT_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , a ## x ## prot, 0 \
             , _PROTsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## cache) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## cache) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## cache) { \
   bitmemcpy ( a ## x ## flit + _AxCACHE_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxCACHE_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , a ## x ## cache, 0 \
             , _CACHEsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## lock) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## lock) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## lock) { \
   bitmemcpy ( a ## x ## flit + _AxLOCK_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxLOCK_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , a ## x ## lock, 0 \
             , _LOCKsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## burst) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## burst) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## burst) { \
   bitmemcpy ( a ## x ## flit + _AxBURST_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxBURST_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , a ## x ## burst, 0 \
             , _BURSTsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## size) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## size) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## size) { \
   bitmemcpy ( a ## x ## flit + _AxSIZE_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxSIZE_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , a ## x ## size, 0 \
             , _SIZEsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## len) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## len) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## len) { \
   bitmemcpy ( a ## x ## flit + _AxLEN_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxLEN_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , a ## x ## len, 0 \
             , _LENsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## addr) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## addr) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## addr) { \
   bitmemcpy ( a ## x ## flit + _AxADDR_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxADDR_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
             , a ## x ## addr, 0 \
             , ADDRsz ); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## id) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## id) \
   (uint8_t* a ## x ## flit, const uint8_t* a ## x ## id) { \
   bitmemcpy ( a ## x ## flit + _AxID_BYTE_IDX(IDsz, ADDRsz, AxUSERsz) \
             , _AxID_BIT_IDX(IDsz, ADDRsz, AxUSERsz) \
@@ -416,65 +419,65 @@ void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## id) \
 \
 \
 \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_flit) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_flit) \
   (t_axi4_a ## x ## flit* a ## x ## flit, const uint8_t* raw_a ## x ## flit) { \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## user) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## user) \
     (a ## x ## flit->a ## x ## user, raw_a ## x ## flit); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## region) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## region) \
     (&a ## x ## flit->a ## x ## region, raw_a ## x ## flit ); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## qos) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## qos) \
     (&a ## x ## flit->a ## x ## qos, raw_a ## x ## flit ); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## prot) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## prot) \
     (&a ## x ## flit->a ## x ## prot, raw_a ## x ## flit ); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## cache) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## cache) \
     (&a ## x ## flit->a ## x ## cache, raw_a ## x ## flit ); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## lock) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## lock) \
     (&a ## x ## flit->a ## x ## lock, raw_a ## x ## flit ); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## burst) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## burst) \
     (&a ## x ## flit->a ## x ## burst, raw_a ## x ## flit ); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## size) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## size) \
     (&a ## x ## flit->a ## x ## size, raw_a ## x ## flit ); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## len) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## len) \
     (&a ## x ## flit->a ## x ## len, raw_a ## x ## flit ); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## addr) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## addr) \
     (a ## x ## flit->a ## x ## addr, raw_a ## x ## flit); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_a ## x ## id) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_a ## x ## id) \
     (a ## x ## flit->a ## x ## id, raw_a ## x ## flit); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_flit) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_flit) \
   (uint8_t* raw_a ## x ## flit, const t_axi4_a ## x ## flit* a ## x ## flit) { \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## user) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## user) \
     (raw_a ## x ## flit, a ## x ## flit->a ## x ## user); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## region) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## region) \
     (raw_a ## x ## flit, &a ## x ## flit->a ## x ## region); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## qos) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## qos) \
     (raw_a ## x ## flit, &a ## x ## flit->a ## x ## qos); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## prot) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## prot) \
     (raw_a ## x ## flit, &a ## x ## flit->a ## x ## prot); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## cache) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## cache) \
     (raw_a ## x ## flit, &a ## x ## flit->a ## x ## cache); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## lock) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## lock) \
     (raw_a ## x ## flit, &a ## x ## flit->a ## x ## lock); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## burst) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## burst) \
     (raw_a ## x ## flit, &a ## x ## flit->a ## x ## burst); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## size) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## size) \
     (raw_a ## x ## flit, &a ## x ## flit->a ## x ## size); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## len) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## len) \
     (raw_a ## x ## flit, &a ## x ## flit->a ## x ## len); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## addr) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## addr) \
     (raw_a ## x ## flit, a ## x ## flit->a ## x ## addr); \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_a ## x ## id) \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_a ## x ## id) \
     (raw_a ## x ## flit, a ## x ## flit->a ## x ## id); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,deserialize_flit) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,deserialize_flit) \
   (void* dest, const uint8_t* rawbytes) { \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_flit) (dest, rawbytes); \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_flit) (dest, rawbytes); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,serialize_flit) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,serialize_flit) \
   (uint8_t* rawbytes, const void* src) { \
-  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,set_flit) (rawbytes, src); \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,set_flit) (rawbytes, src); \
 } \
-t_axi4_a ## x ## flit* _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,create_flit) \
+t_axi4_a ## x ## flit* _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,create_flit) \
   (const uint8_t* raw_a ## x ## flit) { \
   t_axi4_a ## x ## flit* a ## x ## flit = \
     (t_axi4_a ## x ## flit*) malloc (sizeof (t_axi4_a ## x ## flit)); \
@@ -485,19 +488,19 @@ t_axi4_a ## x ## flit* _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,create_flit) \
   a ## x ## flit->a ## x ## id = \
     (uint8_t*) malloc (_DIV8CEIL(IDsz) * sizeof(uint8_t)); \
   if (raw_a ## x ## flit) { \
-    _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,get_flit) \
+    _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,get_flit) \
       (a ## x ## flit, raw_a ## x ## flit); \
   } \
   return a ## x ## flit; \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,destroy_flit) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,destroy_flit) \
   (t_axi4_a ## x ## flit* a ## x ## flit) { \
   free (a ## x ## flit->a ## x ## id); \
   free (a ## x ## flit->a ## x ## addr); \
   free (a ## x ## flit->a ## x ## user); \
   free (a ## x ## flit); \
 } \
-void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,print_flit) \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,print_flit) \
   (const t_axi4_a ## x ## flit* flit) { \
   printf ("axi4_a" #x "flit {"); \
   printf (" a" #x "id: "); \
@@ -526,11 +529,11 @@ void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,print_flit) \
 #define AXI4_AW_BYTEsz(IDsz, ADDRsz, AWUSERsz) \
   _AXI4_Ax_BYTEsz(IDsz, ADDRsz, AWUSERsz)
 
-#define AXI4_AW_(IDsz,ADDRsz,AWUSERsz,sym) \
-  _AXI4_Ax_PFX(w,IDsz,ADDRsz,AWUSERsz,sym)
+#define AXI4_AW_(IDsz,ADDRsz,AWUSERsz,defId,sym) \
+  _AXI4_Ax_PFX(w,IDsz,ADDRsz,AWUSERsz,defId,sym)
 
-#define DEF_AXI4_AWFlit(IDsz, ADDRsz, AWUSERsz) \
-  _DEF_AXI4_AxFlit(w, IDsz, ADDRsz, AWUSERsz)
+#define DEF_AXI4_AWFlit(IDsz, ADDRsz, AWUSERsz, defId) \
+  _DEF_AXI4_AxFlit(w, IDsz, ADDRsz, AWUSERsz, defId)
 
 // WFlits //
 ////////////////////////////////////////////////////////////////////////////////
@@ -552,32 +555,32 @@ void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,print_flit) \
 
 #define AXI4_W_BYTEsz(X,Y) _DIV8CEIL(AXI4_W_BITsz(X,Y))
 
-#define AXI4_W_(DATAsz,WUSERsz,sym) \
-  baub_axi4_w_ ## DATAsz ## _ ## WUSERsz ## _ ## sym
+#define AXI4_W_(DATAsz,WUSERsz,defId,sym) \
+  baub_axi4_w_ ## DATAsz ## _ ## WUSERsz ## _ ## defId ## _ ## sym
 
-#define DEF_AXI4_WFlit(DATAsz, WUSERsz) \
-void AXI4_W_(DATAsz,WUSERsz,get_wuser) \
+#define DEF_AXI4_WFlit(DATAsz,WUSERsz,defId) \
+void AXI4_W_(DATAsz,WUSERsz,defId,get_wuser) \
   (uint8_t* wuser, const uint8_t* wflit) { \
   bitmemcpy ( wuser, 0 \
             , wflit + _WUSER_BYTE_IDX(DATAsz, WUSERsz) \
             , _WUSER_BIT_IDX(DATAsz, WUSERsz) \
             , WUSERsz ); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,get_wlast) \
+void AXI4_W_(DATAsz,WUSERsz,defId,get_wlast) \
   (uint8_t* wlast, const uint8_t* wflit) { \
   bitmemcpy ( wlast, 0 \
             , wflit + _WLAST_BYTE_IDX(DATAsz, WUSERsz) \
             , _WLAST_BIT_IDX(DATAsz, WUSERsz) \
             , _LASTsz ); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,get_wstrb) \
+void AXI4_W_(DATAsz,WUSERsz,defId,get_wstrb) \
   (uint8_t* wstrb, const uint8_t* wflit) { \
   bitmemcpy ( wstrb, 0 \
             , wflit + _WSTRB_BYTE_IDX(DATAsz, WUSERsz) \
             , _WSTRB_BIT_IDX(DATAsz, WUSERsz) \
             , _DIV8CEIL(DATAsz) ); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,get_wdata) \
+void AXI4_W_(DATAsz,WUSERsz,defId,get_wdata) \
   (uint8_t* wdata, const uint8_t* wflit) { \
   bitmemcpy ( wdata, 0 \
             , wflit + _WDATA_BYTE_IDX(DATAsz, WUSERsz) \
@@ -587,28 +590,28 @@ void AXI4_W_(DATAsz,WUSERsz,get_wdata) \
 \
 \
 \
-void AXI4_W_(DATAsz,WUSERsz,set_wuser) \
+void AXI4_W_(DATAsz,WUSERsz,defId,set_wuser) \
   (uint8_t* wflit, const uint8_t* wuser) { \
   bitmemcpy ( wflit + _WUSER_BYTE_IDX(DATAsz, WUSERsz) \
             , _WUSER_BIT_IDX(DATAsz, WUSERsz) \
             , wuser, 0 \
             , WUSERsz ); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,set_wlast) \
+void AXI4_W_(DATAsz,WUSERsz,defId,set_wlast) \
   (uint8_t* wflit, const uint8_t* wlast) { \
   bitmemcpy ( wflit + _WLAST_BYTE_IDX(DATAsz, WUSERsz) \
             , _WLAST_BIT_IDX(DATAsz, WUSERsz) \
             , wlast, 0 \
             , _LASTsz ); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,set_wstrb) \
+void AXI4_W_(DATAsz,WUSERsz,defId,set_wstrb) \
   (uint8_t* wflit, const uint8_t* wstrb) { \
   bitmemcpy ( wflit + _WSTRB_BYTE_IDX(DATAsz, WUSERsz) \
             , _WSTRB_BIT_IDX(DATAsz, WUSERsz) \
             , wstrb, 0 \
             , _DIV8CEIL(DATAsz) ); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,set_wdata) \
+void AXI4_W_(DATAsz,WUSERsz,defId,set_wdata) \
   (uint8_t* wflit, const uint8_t* wdata) { \
   bitmemcpy ( wflit + _WDATA_BYTE_IDX(DATAsz, WUSERsz) \
             , _WDATA_BIT_IDX(DATAsz, WUSERsz) \
@@ -618,29 +621,29 @@ void AXI4_W_(DATAsz,WUSERsz,set_wdata) \
 \
 \
 \
-void AXI4_W_(DATAsz,WUSERsz,get_flit) \
+void AXI4_W_(DATAsz,WUSERsz,defId,get_flit) \
   (t_axi4_wflit* wflit, const uint8_t* raw_wflit) { \
-  AXI4_W_(DATAsz,WUSERsz,get_wuser) (wflit->wuser, raw_wflit); \
-  AXI4_W_(DATAsz,WUSERsz,get_wlast) (&wflit->wlast, raw_wflit); \
-  AXI4_W_(DATAsz,WUSERsz,get_wstrb) (wflit->wstrb, raw_wflit); \
-  AXI4_W_(DATAsz,WUSERsz,get_wdata) (wflit->wdata, raw_wflit); \
+  AXI4_W_(DATAsz,WUSERsz,defId,get_wuser) (wflit->wuser, raw_wflit); \
+  AXI4_W_(DATAsz,WUSERsz,defId,get_wlast) (&wflit->wlast, raw_wflit); \
+  AXI4_W_(DATAsz,WUSERsz,defId,get_wstrb) (wflit->wstrb, raw_wflit); \
+  AXI4_W_(DATAsz,WUSERsz,defId,get_wdata) (wflit->wdata, raw_wflit); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,set_flit) \
+void AXI4_W_(DATAsz,WUSERsz,defId,set_flit) \
   (uint8_t* raw_wflit, const t_axi4_wflit* wflit) { \
-  AXI4_W_(DATAsz,WUSERsz,set_wuser) (raw_wflit, wflit->wuser); \
-  AXI4_W_(DATAsz,WUSERsz,set_wlast) (raw_wflit, &wflit->wlast); \
-  AXI4_W_(DATAsz,WUSERsz,set_wstrb) (raw_wflit, wflit->wstrb); \
-  AXI4_W_(DATAsz,WUSERsz,set_wdata) (raw_wflit, wflit->wdata); \
+  AXI4_W_(DATAsz,WUSERsz,defId,set_wuser) (raw_wflit, wflit->wuser); \
+  AXI4_W_(DATAsz,WUSERsz,defId,set_wlast) (raw_wflit, &wflit->wlast); \
+  AXI4_W_(DATAsz,WUSERsz,defId,set_wstrb) (raw_wflit, wflit->wstrb); \
+  AXI4_W_(DATAsz,WUSERsz,defId,set_wdata) (raw_wflit, wflit->wdata); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,deserialize_flit) \
+void AXI4_W_(DATAsz,WUSERsz,defId,deserialize_flit) \
   (void* dest, const uint8_t* rawbytes) { \
-  AXI4_W_(DATAsz,WUSERsz,get_flit) (dest, rawbytes); \
+  AXI4_W_(DATAsz,WUSERsz,defId,get_flit) (dest, rawbytes); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,serialize_flit) \
+void AXI4_W_(DATAsz,WUSERsz,defId,serialize_flit) \
   (uint8_t* rawbytes, const void* src) { \
-  AXI4_W_(DATAsz,WUSERsz,set_flit) (rawbytes, src); \
+  AXI4_W_(DATAsz,WUSERsz,defId,set_flit) (rawbytes, src); \
 } \
-t_axi4_wflit* AXI4_W_(DATAsz,WUSERsz,create_flit) \
+t_axi4_wflit* AXI4_W_(DATAsz,WUSERsz,defId,create_flit) \
   (const uint8_t* raw_wflit) { \
   t_axi4_wflit* wflit = (t_axi4_wflit*) malloc (sizeof (t_axi4_wflit)); \
   wflit->wuser = (uint8_t*) malloc (_DIV8CEIL(WUSERsz) * sizeof(uint8_t)); \
@@ -648,17 +651,17 @@ t_axi4_wflit* AXI4_W_(DATAsz,WUSERsz,create_flit) \
     (uint8_t*) malloc (_DIV8CEIL(_DIV8CEIL(DATAsz)) * sizeof(uint8_t)); \
   wflit->wdata = (uint8_t*) malloc (_DIV8CEIL(DATAsz) * sizeof(uint8_t)); \
   if (raw_wflit) { \
-    AXI4_W_(DATAsz,WUSERsz,get_flit) (wflit, raw_wflit); \
+    AXI4_W_(DATAsz,WUSERsz,defId,get_flit) (wflit, raw_wflit); \
   } \
   return wflit; \
 } \
-void AXI4_W_(DATAsz,WUSERsz,destroy_flit) (t_axi4_wflit* wflit) { \
+void AXI4_W_(DATAsz,WUSERsz,defId,destroy_flit) (t_axi4_wflit* wflit) { \
   free (wflit->wdata); \
   free (wflit->wstrb); \
   free (wflit->wuser); \
   free (wflit); \
 } \
-void AXI4_W_(DATAsz,WUSERsz,print_flit) (const t_axi4_wflit* flit) { \
+void AXI4_W_(DATAsz,WUSERsz,defId,print_flit) (const t_axi4_wflit* flit) { \
   printf ("axi4_wflit {"); \
   printf (" wdata: "); \
   bitHexDump (flit->wdata, DATAsz); \
@@ -686,23 +689,23 @@ void AXI4_W_(DATAsz,WUSERsz,print_flit) (const t_axi4_wflit* flit) { \
 
 #define AXI4_B_BYTEsz(X,Y) _DIV8CEIL(AXI4_B_BITsz(X,Y))
 
-#define AXI4_B_(IDsz,BUSERsz,sym) \
-  baub_axi4_b_ ## IDsz ## _ ## BUSERsz ## _ ## sym
+#define AXI4_B_(IDsz,BUSERsz,defId,sym) \
+  baub_axi4_b_ ## IDsz ## _ ## BUSERsz ## _ ## defId ## _ ## sym
 
-#define DEF_AXI4_BFlit(IDsz, BUSERsz) \
-void AXI4_B_(IDsz,BUSERsz,get_buser) (uint8_t* buser, const uint8_t* bflit) { \
+#define DEF_AXI4_BFlit(IDsz, BUSERsz, defId) \
+void AXI4_B_(IDsz,BUSERsz,defId,get_buser) (uint8_t* buser, const uint8_t* bflit) { \
   bitmemcpy ( buser, 0 \
             , bflit + _BUSER_BYTE_IDX(IDsz, BUSERsz) \
             , _BUSER_BIT_IDX(IDsz, BUSERsz) \
             , BUSERsz ); \
 } \
-void AXI4_B_(IDsz,BUSERsz,get_bresp) (uint8_t* bresp, const uint8_t* bflit) { \
+void AXI4_B_(IDsz,BUSERsz,defId,get_bresp) (uint8_t* bresp, const uint8_t* bflit) { \
   bitmemcpy ( bresp, 0 \
             , bflit + _BRESP_BYTE_IDX(IDsz, BUSERsz) \
             , _BRESP_BIT_IDX(IDsz, BUSERsz) \
             , _RESPsz ); \
 } \
-void AXI4_B_(IDsz,BUSERsz,get_bid) (uint8_t* bid, const uint8_t* bflit) { \
+void AXI4_B_(IDsz,BUSERsz,defId,get_bid) (uint8_t* bid, const uint8_t* bflit) { \
   bitmemcpy ( bid, 0 \
             , bflit + _BID_BYTE_IDX(IDsz, BUSERsz) \
             , _BID_BIT_IDX(IDsz, BUSERsz) \
@@ -711,19 +714,19 @@ void AXI4_B_(IDsz,BUSERsz,get_bid) (uint8_t* bid, const uint8_t* bflit) { \
 \
 \
 \
-void AXI4_B_(IDsz,BUSERsz,set_buser) (uint8_t* bflit, const uint8_t* buser) { \
+void AXI4_B_(IDsz,BUSERsz,defId,set_buser) (uint8_t* bflit, const uint8_t* buser) { \
   bitmemcpy ( bflit + _BUSER_BYTE_IDX(IDsz, BUSERsz) \
             , _BUSER_BIT_IDX(IDsz, BUSERsz) \
             , buser, 0 \
             , BUSERsz ); \
 } \
-void AXI4_B_(IDsz,BUSERsz,set_bresp) (uint8_t* bflit, const uint8_t* bresp) { \
+void AXI4_B_(IDsz,BUSERsz,defId,set_bresp) (uint8_t* bflit, const uint8_t* bresp) { \
   bitmemcpy ( bflit + _BRESP_BYTE_IDX(IDsz, BUSERsz) \
             , _BRESP_BIT_IDX(IDsz, BUSERsz) \
             , bresp, 0 \
             , _RESPsz ); \
 } \
-void AXI4_B_(IDsz,BUSERsz,set_bid) (uint8_t* bflit, const uint8_t* bid) { \
+void AXI4_B_(IDsz,BUSERsz,defId,set_bid) (uint8_t* bflit, const uint8_t* bid) { \
   bitmemcpy ( bflit + _BID_BYTE_IDX(IDsz, BUSERsz) \
             , _BID_BIT_IDX(IDsz, BUSERsz) \
             , bid, 0 \
@@ -732,41 +735,41 @@ void AXI4_B_(IDsz,BUSERsz,set_bid) (uint8_t* bflit, const uint8_t* bid) { \
 \
 \
 \
-void AXI4_B_(IDsz,BUSERsz,get_flit) \
+void AXI4_B_(IDsz,BUSERsz,defId,get_flit) \
   (t_axi4_bflit* bflit, const uint8_t* raw_bflit) { \
-  AXI4_B_(IDsz,BUSERsz,get_buser) (bflit->buser, raw_bflit); \
-  AXI4_B_(IDsz,BUSERsz,get_bresp) (&bflit->bresp, raw_bflit); \
-  AXI4_B_(IDsz,BUSERsz,get_bid) (bflit->bid, raw_bflit); \
+  AXI4_B_(IDsz,BUSERsz,defId,get_buser) (bflit->buser, raw_bflit); \
+  AXI4_B_(IDsz,BUSERsz,defId,get_bresp) (&bflit->bresp, raw_bflit); \
+  AXI4_B_(IDsz,BUSERsz,defId,get_bid) (bflit->bid, raw_bflit); \
 } \
-void AXI4_B_(IDsz,BUSERsz,set_flit) \
+void AXI4_B_(IDsz,BUSERsz,defId,set_flit) \
   (uint8_t* raw_bflit, const t_axi4_bflit* bflit) { \
-  AXI4_B_(IDsz,BUSERsz,set_buser) (raw_bflit, bflit->buser); \
-  AXI4_B_(IDsz,BUSERsz,set_bresp) (raw_bflit, &bflit->bresp); \
-  AXI4_B_(IDsz,BUSERsz,set_bid) (raw_bflit, bflit->bid); \
+  AXI4_B_(IDsz,BUSERsz,defId,set_buser) (raw_bflit, bflit->buser); \
+  AXI4_B_(IDsz,BUSERsz,defId,set_bresp) (raw_bflit, &bflit->bresp); \
+  AXI4_B_(IDsz,BUSERsz,defId,set_bid) (raw_bflit, bflit->bid); \
 } \
-void AXI4_B_(IDsz,BUSERsz,deserialize_flit) \
+void AXI4_B_(IDsz,BUSERsz,defId,deserialize_flit) \
   (void* dest, const uint8_t* rawbytes) { \
-  AXI4_B_(IDsz,BUSERsz,get_flit) (dest, rawbytes); \
+  AXI4_B_(IDsz,BUSERsz,defId,get_flit) (dest, rawbytes); \
 } \
-void AXI4_B_(IDsz,BUSERsz,serialize_flit) \
+void AXI4_B_(IDsz,BUSERsz,defId,serialize_flit) \
   (uint8_t* rawbytes, const void* src) { \
-  AXI4_B_(IDsz,BUSERsz,set_flit) (rawbytes, src); \
+  AXI4_B_(IDsz,BUSERsz,defId,set_flit) (rawbytes, src); \
 } \
-t_axi4_bflit* AXI4_B_(IDsz,BUSERsz,create_flit) (const uint8_t* raw_bflit) { \
+t_axi4_bflit* AXI4_B_(IDsz,BUSERsz,defId,create_flit) (const uint8_t* raw_bflit) { \
   t_axi4_bflit* bflit = (t_axi4_bflit*) malloc (sizeof (t_axi4_bflit)); \
   bflit->buser = (uint8_t*) malloc (_DIV8CEIL(BUSERsz) * sizeof(uint8_t)); \
   bflit->bid = (uint8_t*) malloc (_DIV8CEIL(IDsz) * sizeof(uint8_t)); \
   if (raw_bflit) { \
-    AXI4_B_(IDsz,BUSERsz,get_flit) (bflit, raw_bflit); \
+    AXI4_B_(IDsz,BUSERsz,defId,get_flit) (bflit, raw_bflit); \
   } \
   return bflit; \
 } \
-void AXI4_B_(IDsz,BUSERsz,destroy_flit) (t_axi4_bflit* bflit) { \
+void AXI4_B_(IDsz,BUSERsz,defId,destroy_flit) (t_axi4_bflit* bflit) { \
   free (bflit->bid); \
   free (bflit->buser); \
   free (bflit); \
 } \
-void AXI4_B_(IDsz,BUSERsz,print_flit) (const t_axi4_bflit* flit) { \
+void AXI4_B_(IDsz,BUSERsz,defId,print_flit) (const t_axi4_bflit* flit) { \
   printf ("axi4_bflit {"); \
   printf (" bid: "); \
   bitHexDump (flit->bid, IDsz); \
@@ -785,11 +788,11 @@ void AXI4_B_(IDsz,BUSERsz,print_flit) (const t_axi4_bflit* flit) { \
 #define AXI4_AR_BYTEsz(IDsz, ADDRsz, ARUSERsz) \
   _AXI4_Ax_BYTEsz(IDsz, ADDRsz, ARUSERsz)
 
-#define AXI4_AR_(IDsz,ADDRsz,AWUSERsz,sym) \
-  _AXI4_Ax_PFX(r,IDsz,ADDRsz,AWUSERsz,sym)
+#define AXI4_AR_(IDsz,ADDRsz,AWUSERsz,defId,sym) \
+  _AXI4_Ax_PFX(r,IDsz,ADDRsz,AWUSERsz,defId,sym)
 
-#define DEF_AXI4_ARFlit(IDsz, ADDRsz, ARUSERsz) \
-  _DEF_AXI4_AxFlit(r, IDsz, ADDRsz, ARUSERsz)
+#define DEF_AXI4_ARFlit(IDsz, ADDRsz, ARUSERsz, defId) \
+  _DEF_AXI4_AxFlit(r, IDsz, ADDRsz, ARUSERsz, defId)
 
 // RFlits //
 ////////////////////////////////////////////////////////////////////////////////
@@ -813,39 +816,40 @@ void AXI4_B_(IDsz,BUSERsz,print_flit) (const t_axi4_bflit* flit) { \
 
 #define AXI4_R_BYTEsz(X,Y,Z) _DIV8CEIL(AXI4_R_BITsz(X,Y,Z))
 
-#define AXI4_R_(IDsz,DATAsz,RUSERsz,sym) \
-  baub_axi4_rflit_ ## IDsz ## _ ## DATAsz ## _ ## RUSERsz ## _ ## sym
+#define AXI4_R_(IDsz,DATAsz,RUSERsz,defId,sym) \
+  baub_axi4_rflit_ ## IDsz ## _ ## DATAsz ## _ ## RUSERsz \
+                   ## _ ## defId ## _ ## sym
 
-#define DEF_AXI4_RFlit(IDsz, DATAsz, RUSERsz) \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,get_ruser) \
+#define DEF_AXI4_RFlit(IDsz, DATAsz, RUSERsz, defId) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_ruser) \
   (uint8_t* ruser, const uint8_t* rflit) { \
   bitmemcpy ( ruser, 0 \
             , rflit + _RUSER_BYTE_IDX(IDsz, DATAsz, RUSERsz) \
             , _RUSER_BIT_IDX(IDsz, DATAsz, RUSERsz) \
             , RUSERsz ); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,get_rlast) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_rlast) \
   (uint8_t* rlast, const uint8_t* rflit) { \
   bitmemcpy ( rlast, 0 \
             , rflit + _RLAST_BYTE_IDX(IDsz, DATAsz, RUSERsz) \
             , _RLAST_BIT_IDX(IDsz, DATAsz, RUSERsz) \
             , _LASTsz ); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,get_rresp) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_rresp) \
   (uint8_t* rresp, const uint8_t* rflit) { \
   bitmemcpy ( rresp, 0 \
             , rflit + _RRESP_BYTE_IDX(IDsz, DATAsz, RUSERsz) \
             , _RRESP_BIT_IDX(IDsz, DATAsz, RUSERsz) \
             , _RESPsz ); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,get_rdata) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_rdata) \
   (uint8_t* rdata, const uint8_t* rflit) { \
   bitmemcpy ( rdata, 0 \
             , rflit + _RDATA_BYTE_IDX(IDsz, DATAsz, RUSERsz) \
             , _RDATA_BIT_IDX(IDsz, DATAsz, RUSERsz) \
             , DATAsz ); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,get_rid) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_rid) \
   (uint8_t* rid, const uint8_t* rflit) { \
   bitmemcpy ( rid, 0 \
             , rflit + _RID_BYTE_IDX(IDsz, DATAsz, RUSERsz) \
@@ -855,35 +859,35 @@ void AXI4_R_(IDsz,DATAsz,RUSERsz,get_rid) \
 \
 \
 \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,set_ruser) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_ruser) \
   (uint8_t* rflit, const uint8_t* ruser) { \
   bitmemcpy ( rflit + _RUSER_BYTE_IDX(IDsz, DATAsz, RUSERsz) \
             , _RUSER_BIT_IDX(IDsz, DATAsz, RUSERsz) \
             , ruser, 0 \
             , RUSERsz ); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,set_rlast) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_rlast) \
   (uint8_t* rflit, const uint8_t* rlast) { \
   bitmemcpy ( rflit + _RLAST_BYTE_IDX(IDsz, DATAsz, RUSERsz) \
             , _RLAST_BIT_IDX(IDsz, DATAsz, RUSERsz) \
             , rlast, 0 \
             , _LASTsz ); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,set_rresp) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_rresp) \
   (uint8_t* rflit, const uint8_t* rresp) { \
   bitmemcpy ( rflit + _RRESP_BYTE_IDX(IDsz, DATAsz, RUSERsz) \
             , _RRESP_BIT_IDX(IDsz, DATAsz, RUSERsz) \
             , rresp, 0 \
             , _RESPsz ); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,set_rdata) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_rdata) \
   (uint8_t* rflit, const uint8_t* rdata) { \
   bitmemcpy ( rflit + _RDATA_BYTE_IDX(IDsz, DATAsz, RUSERsz) \
             , _RDATA_BIT_IDX(IDsz, DATAsz, RUSERsz) \
             , rdata, 0 \
             , DATAsz ); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,set_rid) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_rid) \
   (uint8_t* rflit, const uint8_t* rid) { \
   bitmemcpy ( rflit + _RID_BYTE_IDX(IDsz, DATAsz, RUSERsz) \
             , _RID_BIT_IDX(IDsz, DATAsz, RUSERsz) \
@@ -893,48 +897,49 @@ void AXI4_R_(IDsz,DATAsz,RUSERsz,set_rid) \
 \
 \
 \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,get_flit) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_flit) \
   (t_axi4_rflit* rflit, const uint8_t* raw_rflit) { \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,get_ruser) (rflit->ruser, raw_rflit); \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,get_rlast) (&rflit->rlast, raw_rflit); \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,get_rresp) (&rflit->rresp, raw_rflit); \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,get_rdata) (rflit->rdata, raw_rflit); \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,get_rid) (rflit->rid, raw_rflit); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_ruser) (rflit->ruser, raw_rflit); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_rlast) (&rflit->rlast, raw_rflit); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_rresp) (&rflit->rresp, raw_rflit); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_rdata) (rflit->rdata, raw_rflit); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_rid) (rflit->rid, raw_rflit); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,set_flit) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_flit) \
   (uint8_t* raw_rflit, const t_axi4_rflit* rflit) { \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,set_ruser) (raw_rflit, rflit->ruser); \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,set_rlast) (raw_rflit, &rflit->rlast); \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,set_rresp) (raw_rflit, &rflit->rresp); \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,set_rdata) (raw_rflit, rflit->rdata); \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,set_rid) (raw_rflit, rflit->rid); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_ruser) (raw_rflit, rflit->ruser); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_rlast) (raw_rflit, &rflit->rlast); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_rresp) (raw_rflit, &rflit->rresp); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_rdata) (raw_rflit, rflit->rdata); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_rid) (raw_rflit, rflit->rid); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,deserialize_flit) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,deserialize_flit) \
   (void* dest, const uint8_t* rawbytes) { \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,get_flit) (dest, rawbytes); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_flit) (dest, rawbytes); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,serialize_flit) \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,serialize_flit) \
   (uint8_t* rawbytes, const void* src) { \
-  AXI4_R_(IDsz,DATAsz,RUSERsz,set_flit) (rawbytes, src); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,set_flit) (rawbytes, src); \
 } \
-t_axi4_rflit* AXI4_R_(IDsz,DATAsz,RUSERsz,create_flit) \
+t_axi4_rflit* AXI4_R_(IDsz,DATAsz,RUSERsz,defId,create_flit) \
   (const uint8_t* raw_rflit) { \
   t_axi4_rflit* rflit = (t_axi4_rflit*) malloc (sizeof (t_axi4_rflit)); \
   rflit->ruser = (uint8_t*) malloc (_DIV8CEIL(RUSERsz) * sizeof(uint8_t)); \
   rflit->rdata = (uint8_t*) malloc (_DIV8CEIL(DATAsz) * sizeof(uint8_t)); \
   rflit->rid = (uint8_t*) malloc (_DIV8CEIL(IDsz) * sizeof(uint8_t)); \
   if (raw_rflit) { \
-    AXI4_R_(IDsz,DATAsz,RUSERsz,get_flit) (rflit, raw_rflit); \
+    AXI4_R_(IDsz,DATAsz,RUSERsz,defId,get_flit) (rflit, raw_rflit); \
   } \
   return rflit; \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,destroy_flit) (t_axi4_rflit* rflit) { \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,destroy_flit) (t_axi4_rflit* rflit) { \
   free (rflit->rid); \
   free (rflit->rdata); \
   free (rflit->ruser); \
   free (rflit); \
 } \
-void AXI4_R_(IDsz,DATAsz,RUSERsz,print_flit) (const t_axi4_rflit* flit) { \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,print_flit) \
+  (const t_axi4_rflit* flit) { \
   printf ("axi4_rflit {"); \
   printf (" rid: "); \
   bitHexDump (flit->rid, IDsz); \
@@ -950,11 +955,11 @@ void AXI4_R_(IDsz,DATAsz,RUSERsz,print_flit) (const t_axi4_rflit* flit) { \
 // AXI4 fully parameterized definitions
 ////////////////////////////////////////////////////////////////////////////////
 
-#define DEF_AXI4_HEPLERS_API(IDsz, ADDRsz, DATAsz, AWsz, Wsz, Bsz, ARsz, Rsz) \
-  DEF_AXI4_AWFlit(IDsz, ADDRsz, AWsz) \
-  DEF_AXI4_WFlit(DATAsz, Wsz) \
-  DEF_AXI4_BFlit(IDsz, Bsz) \
-  DEF_AXI4_ARFlit(IDsz, ADDRsz, ARsz) \
-  DEF_AXI4_RFlit(IDsz, DATAsz, Rsz)
+#define DEF_AXI4_HEPLERS_API(IDsz,ADDRsz,DATAsz,AWsz,Wsz,Bsz,ARsz,Rsz,defId) \
+  DEF_AXI4_AWFlit(IDsz, ADDRsz, AWsz, defId) \
+  DEF_AXI4_WFlit(DATAsz, Wsz, defId) \
+  DEF_AXI4_BFlit(IDsz, Bsz, defId) \
+  DEF_AXI4_ARFlit(IDsz, ADDRsz, ARsz, defId) \
+  DEF_AXI4_RFlit(IDsz, DATAsz, Rsz, defId)
 
 #endif

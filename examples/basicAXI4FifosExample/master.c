@@ -3,7 +3,7 @@
 #include <pthread.h>
 #include <unistd.h>
 
-DEF_AXI4_API(2, 32, 64, 0, 0, 0, 0, 0)
+DEF_AXI4_API(2, 32, 64, 0, 0, 0, 0, 0, test)
 
 ////////////////////////////////////////////////////////////////////////////////
 typedef struct { bub_fifo_desc_t ff; int n; } arArg_t;
@@ -31,9 +31,9 @@ void* arTask (void* argPtr) {
   for (int i = 0; i < arg->n; i++) {
     araddr += i;
     while (!bub_fifo_Produce (arg->ff, (void*) &arflit));
-    AXI4_AR_(2,32,0,print_flit)(&arflit);
+    AXI4_AR_(2,32,0,test,print_flit)(&arflit);
     printf ("\n");
-    AXI4_AR_(2,32,0,serialize_flit)(bitBag, &arflit);
+    AXI4_AR_(2,32,0,test,serialize_flit)(bitBag, &arflit);
     bitHexDump(bitBag, AXI4_AR_BITsz(2,32,0));
     printf ("\n");
   }
@@ -43,11 +43,11 @@ void* arTask (void* argPtr) {
 typedef struct { bub_fifo_desc_t ff; int n; } rArg_t;
 void* rTask (void* argPtr) {
   rArg_t* arg = (rArg_t*) argPtr;
-  t_axi4_rflit* rflit = AXI4_R_(2,64,0,create_flit)(NULL);
+  t_axi4_rflit* rflit = AXI4_R_(2,64,0,test,create_flit)(NULL);
   int cnt = 0;
   while (cnt < arg->n) {
     while (!bub_fifo_Consume (arg->ff, (void*) rflit));
-    AXI4_R_(2,64,0,print_flit)(rflit);
+    AXI4_R_(2,64,0,test,print_flit)(rflit);
     printf ("\n");
     if (rflit->rlast) cnt++;
   }
@@ -60,7 +60,7 @@ int main (int argc, char** argv) {
     exit (EXIT_FAILURE);
   }
   baub_port_fifo_desc_t* slvDesc =
-    AXI4_(2, 32, 64, 0, 0, 0, 0, 0, fifo_OpenAsSlave)(argv[1]);
+    AXI4_(2, 32, 64, 0, 0, 0, 0, 0, test, fifo_OpenAsSlave)(argv[1]);
   printf("argv[1]: %s\n", argv[1]);
   printf("argv[2]: %s\n", argv[2]);
   printf("argv[3]: %s\n", argv[3]);
@@ -87,5 +87,4 @@ int main (int argc, char** argv) {
   baub_fifo_Close (slvDesc);
 
   return 0;
-
 }
