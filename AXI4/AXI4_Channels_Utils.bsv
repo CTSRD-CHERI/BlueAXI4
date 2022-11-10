@@ -1,17 +1,6 @@
 /*-
  * Copyright (c) 2018-2022 Alexandre Joannou
- * Copyright (c) 2019 Peter Rugg
- * Copyright (c) 2020 Jonas Fiala
- * Copyright (c) 2021 Marno van der Maas
- * Copyright (c) 2021 Ivan Ribeiro
  * All rights reserved.
- *
- * This hardware design was developed by the University of Cambridge Computer
- * Laboratory (Department of Computer Science and Technology) under EPSRC award
- * EP/S030867/1 ("SIPP"); and by SRI International and the University of
- * Cambridge Computer Laboratory (Department of Computer Science and
- * Technology) under DARPA contract HR0011-18-C-0016 ("ECATS"), as part of the
- * DARPA SSITH research programme.
  *
  * This material is based upon work supported by the DoD Information Analysis
  * Center Program Management Office (DoD IAC PMO), sponsored by the Defense
@@ -39,18 +28,18 @@
  * @BERI_LICENSE_HEADER_END@
  */
 
-package AXI4_Utils;
+package AXI4_Channels_Utils;
 
-import AXI4_Utils_Basics         :: *;
-import AXI4_Utils_ID_Crossing    :: *;
-import AXI4_Utils_Map_Utils      :: *;
-import AXI4_Utils_Misc           :: *;
-import AXI4_Utils_Write_Channels :: *;
+import AXI4_AW_Utils :: *;
+import AXI4_W_Utils  :: *;
+import AXI4_B_Utils  :: *;
+import AXI4_AR_Utils :: *;
+import AXI4_R_Utils  :: *;
 
-export AXI4_Utils_Basics         :: *;
-export AXI4_Utils_ID_Crossing    :: *;
-export AXI4_Utils_Map_Utils      :: *;
-export AXI4_Utils_Misc           :: *;
-export AXI4_Utils_Write_Channels :: *;
+export AXI4_AW_Utils :: *;
+export AXI4_W_Utils  :: *;
+export AXI4_B_Utils  :: *;
+export AXI4_AR_Utils :: *;
+export AXI4_R_Utils  :: *;
 
 endpackage
