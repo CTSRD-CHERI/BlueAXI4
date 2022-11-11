@@ -26,10 +26,11 @@
  * @BERI_LICENSE_HEADER_END@
  */
 
-import SourceSink :: *;
+import BlueBasics :: *;
 
 import AXI4_Types :: *;
 
+import Probe :: *;
 import FIFOF :: *;
 import SpecialFIFOs :: *;
 
@@ -116,6 +117,129 @@ endtypeclass
 instance FromAXI4_ARFlit#(AXI4_ARFlit#(a, b, c), a, b, c);
   function fromAXI4_ARFlit = id;
 endinstance
+
+// augment master / slave Sig "on action" function
+////////////////////////////////////////////////////////////////////////////////
+
+function AXI4_AR_Master_Sig #(id_, addr_, user_)
+  on_arready ( function Action f ( Bool _valid
+                                 , Bool _ready
+                                 , AXI4_ARFlit #(id_, addr_, user_) _flit )
+             , AXI4_AR_Master_Sig #(id_, addr_, user_) m) =
+  interface AXI4_AR_Master_Sig;
+    method arid     = m.arid;
+    method araddr   = m.araddr;
+    method arlen    = m.arlen;
+    method arsize   = m.arsize;
+    method arburst  = m.arburst;
+    method arlock   = m.arlock;
+    method arcache  = m.arcache;
+    method arprot   = m.arprot;
+    method arqos    = m.arqos;
+    method arregion = m.arregion;
+    method aruser   = m.aruser;
+    method arvalid  = m.arvalid;
+    method arready (rdy) = action
+      f (m.arvalid, rdy, AXI4_ARFlit { arid:     m.arid
+                                     , araddr:   m.araddr
+                                     , arlen:    m.arlen
+                                     , arsize:   m.arsize
+                                     , arburst:  m.arburst
+                                     , arlock:   m.arlock
+                                     , arcache:  m.arcache
+                                     , arprot:   m.arprot
+                                     , arqos:    m.arqos
+                                     , arregion: m.arregion
+                                     , aruser:   m.aruser });
+      m.arready (rdy);
+    endaction;
+  endinterface;
+
+function AXI4_AR_Slave_Sig #(id_, addr_, user_)
+  on_arflit ( function Action f ( Bool _valid
+                                , Bool _ready
+                                , AXI4_ARFlit #(id_, addr_, user_) _flit )
+            , AXI4_AR_Slave_Sig #(id_, addr_, user_) s ) =
+  interface AXI4_AR_Slave_Sig;
+    method arflit ( arvalid
+                  , arid
+                  , araddr
+                  , arlen
+                  , arsize
+                  , arburst
+                  , arlock
+                  , arcache
+                  , arprot
+                  , arqos
+                  , arregion
+                  , aruser ) = action
+      f ( arvalid, s.arready, AXI4_ARFlit { arid:     arid
+                                          , araddr:   araddr
+                                          , arlen:    arlen
+                                          , arsize:   arsize
+                                          , arburst:  arburst
+                                          , arlock:   arlock
+                                          , arcache:  arcache
+                                          , arprot:   arprot
+                                          , arqos:    arqos
+                                          , arregion: arregion
+                                          , aruser:   aruser } );
+      s.arflit ( arvalid
+               , arid
+               , araddr
+               , arlen
+               , arsize
+               , arburst
+               , arlock
+               , arcache
+               , arprot
+               , arqos
+               , arregion
+               , aruser );
+    endaction;
+    method arready = s.arready;
+  endinterface;
+
+// augment master / slave Sig
+////////////////////////////////////////////////////////////////////////////////
+
+module augmentAXI4_AR_Master_Sig #(
+    function module #(Empty) f (Bool arvalid, Bool arready, flit_t arflit)
+  , ar_master_sig m) (ar_master_sig)
+  provisos ( Alias #(ar_master_sig, AXI4_AR_Master_Sig #(id_, addr_, user_))
+           , Alias #(flit_t, AXI4_ARFlit #(id_, addr_, user_)) );
+  let arreadyWire <- mkPulseWire;
+  f (m.arvalid, arreadyWire, AXI4_ARFlit { arid:     m.arid
+                                         , araddr:   m.araddr
+                                         , arlen:    m.arlen
+                                         , arsize:   m.arsize
+                                         , arburst:  m.arburst
+                                         , arlock:   m.arlock
+                                         , arcache:  m.arcache
+                                         , arprot:   m.arprot
+                                         , arqos:    m.arqos
+                                         , arregion: m.arregion
+                                         , aruser:   m.aruser });
+  function g (_arvalid , arready , _flit) = action
+    if (arready) arreadyWire.send;
+  endaction;
+  return on_arready (g, m);
+endmodule
+
+module augmentAXI4_AR_Slave_Sig #(
+    function module #(Empty) f (Bool arvalid, Bool arready, flit_t arflit)
+  , ar_slave_sig s) (ar_slave_sig)
+  provisos ( Alias #(ar_slave_sig, AXI4_AR_Slave_Sig #(id_, addr_, user_))
+           , Alias #(flit_t, AXI4_ARFlit #(id_, addr_, user_)) );
+  let arvalidWire <- mkPulseWire;
+  let arflitWire <- mkDWire (?);
+  f (arvalidWire, s.arready, arflitWire);
+  function g (arvalid, _arready, arflit) = action
+    if (arvalid) arvalidWire.send;
+    arflitWire <= arflit;
+  endaction;
+  return on_arflit (g, s);
+endmodule
 
 // convert to/from Sig Master interface
 ////////////////////////////////////////////////////////////////////////////////
@@ -225,4 +349,76 @@ module fromAXI4_AR_Slave_Sig #(AXI4_AR_Slave_Sig#(id_, addr_, user_) s)
   (* fire_when_enabled, no_implicit_conditions *)
   rule dropFlit (src.canPeek && s.arready); src.drop; endrule
   return toSink(buffer);
+endmodule
+
+// probe AR flit
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_ARFlit #( Bool arvalid
+                         , Bool arready
+                         , AXI4_ARFlit #(id_, addr_, user_) arflit) (Empty);
+  let arid_prb <- mkProbe;
+  let araddr_prb <- mkProbe;
+  let arlen_prb <- mkProbe;
+  let arsize_prb <- mkProbe;
+  let arburst_prb <- mkProbe;
+  let arlock_prb <- mkProbe;
+  let arcache_prb <- mkProbe;
+  let arprot_prb <- mkProbe;
+  let arqos_prb <- mkProbe;
+  let arregion_prb <- mkProbe;
+  let aruser_prb <- mkProbe;
+  let arvalid_prb <- mkProbe;
+  let arready_prb <- mkProbe;
+  (* fire_when_enabled, no_implicit_conditions *)
+  rule probe_signals;
+    arid_prb <= arflit.arid;
+    araddr_prb <= arflit.araddr;
+    arlen_prb <= arflit.arlen;
+    arsize_prb <= arflit.arsize;
+    arburst_prb <= arflit.arburst;
+    arlock_prb <= arflit.arlock;
+    arcache_prb <= arflit.arcache;
+    arprot_prb <= arflit.arprot;
+    arqos_prb <= arflit.arqos;
+    arregion_prb <= arflit.arregion;
+    aruser_prb <= arflit.aruser;
+    arvalid_prb <= arvalid;
+    arready_prb <= arready;
+  endrule
+endmodule
+
+// probe Master interface
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_AR_Master_Sig #(AXI4_AR_Master_Sig #(id_, addr_, user_) m)
+                                (AXI4_AR_Master_Sig #(id_, addr_, user_));
+  augmentAXI4_AR_Master_Sig (probeAXI4_ARFlit, m);
+  return m;
+endmodule
+
+module probeAXI4_ARFlit_Source #(src_t src) (Source #(flit_t))
+  provisos ( Alias #(flit_t, AXI4_ARFlit #(id_, addr_, user_))
+           , ToSource #(src_t, flit_t) );
+  let probed <- augmentSourceWith (probeAXI4_ARFlit, src);
+  return probed;
+endmodule
+
+// probe Slave interface
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_AR_Slave_Sig #(AXI4_AR_Slave_Sig #(id_, addr_, user_) s)
+                               (AXI4_AR_Slave_Sig #(id_, addr_, user_));
+  augmentAXI4_AR_Slave_Sig (probeAXI4_ARFlit, s);
+  return s;
+endmodule
+
+module probeAXI4_ARFlit_Sink #(snk_t snk) (Sink #(flit_t))
+  provisos ( Alias #(flit_t, AXI4_ARFlit #(id_, addr_, user_))
+           , ToSink #(snk_t, flit_t) );
+  module f #(Bool canPut, Maybe #(flit_t) mData) (Empty);
+    probeAXI4_ARFlit (isValid (mData), canPut, fromMaybe (?, mData));
+  endmodule
+  let probed <- augmentSinkWith (f, snk);
+  return probed;
 endmodule
