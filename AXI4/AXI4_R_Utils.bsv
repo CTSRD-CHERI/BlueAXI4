@@ -26,10 +26,11 @@
  * @BERI_LICENSE_HEADER_END@
  */
 
-import SourceSink :: *;
+import BlueBasics :: *;
 
 import AXI4_Types :: *;
 
+import Probe :: *;
 import FIFOF :: *;
 import SpecialFIFOs :: *;
 
@@ -98,6 +99,83 @@ endtypeclass
 instance FromAXI4_RFlit#(AXI4_RFlit#(a, b, c), a, b, c);
   function fromAXI4_RFlit = id;
 endinstance
+
+// augment master / slave Sig "on action" function
+////////////////////////////////////////////////////////////////////////////////
+
+function AXI4_R_Master_Sig #(id_, data_, user_)
+  on_rready ( function Action f ( Bool _valid
+                                , Bool _ready
+                                , AXI4_RFlit #(id_, data_, user_) _flit )
+           , AXI4_R_Master_Sig #(id_, data_, user_) m ) =
+  interface AXI4_R_Master_Sig;
+    method rflit (rvalid, rid, rdata, rresp, rlast, ruser) = action
+      f (rvalid, m.rready, AXI4_RFlit { rid: rid
+                                      , rdata: rdata
+                                      , rresp: rresp
+                                      , rlast: rlast
+                                      , ruser: ruser });
+      m.rflit (rvalid, rid, rdata, rresp, rlast, ruser);
+    endaction;
+    method rready = m.rready;
+  endinterface;
+
+function AXI4_R_Slave_Sig #(id_, data_, user_)
+  on_rflit ( function Action f ( Bool _valid
+                               , Bool _ready
+                               , AXI4_RFlit #(id_, data_, user_) _flit )
+            , AXI4_R_Slave_Sig #(id_, data_, user_) s) =
+  interface AXI4_R_Slave_Sig;
+    method rid = s.rid;
+    method rdata = s.rdata;
+    method rresp = s.rresp;
+    method rlast = s.rlast;
+    method ruser = s.ruser;
+    method rvalid  = s.rvalid;
+    method rready (rdy) = action
+      f (s.rvalid, rdy, AXI4_RFlit { rid: s.rid
+                                   , rdata: s.rdata
+                                   , rresp: s.rresp
+                                   , rlast: s.rlast
+                                   , ruser: s.ruser });
+      s.rready (rdy);
+    endaction;
+  endinterface;
+
+// augment master / slave Sig
+////////////////////////////////////////////////////////////////////////////////
+
+module augmentAXI4_R_Master_Sig #(
+    function module #(Empty) f (Bool rvalid, Bool rready, flit_t rflit)
+  , r_master_sig m) (r_master_sig)
+  provisos ( Alias #(r_master_sig, AXI4_R_Master_Sig #(id_, data_, user_))
+           , Alias #(flit_t, AXI4_RFlit #(id_, data_, user_)) );
+  let rvalidWire <- mkPulseWire;
+  let rflitWire <- mkDWire (?);
+  f (rvalidWire, m.rready, rflitWire);
+  function g (rvalid, _rready, rflit) = action
+    if (rvalid) rvalidWire.send;
+    rflitWire <= rflit;
+  endaction;
+  return on_rready (g, m);
+endmodule
+
+module augmentAXI4_R_Slave_Sig #(
+    function module #(Empty) f (Bool rvalid, Bool rready, flit_t rflit)
+  , r_slave_sig s) (r_slave_sig)
+  provisos ( Alias #(r_slave_sig, AXI4_R_Slave_Sig #(id_, data_, user_))
+           , Alias #(flit_t, AXI4_RFlit #(id_, data_, user_)) );
+  let rreadyWire <- mkPulseWire;
+  f (s.rvalid, rreadyWire, AXI4_RFlit { rid: s.rid
+                                      , rdata: s.rdata
+                                      , rresp: s.rresp
+                                      , rlast: s.rlast
+                                      , ruser: s.ruser });
+  function g (_rvalid , rready , _flit) = action
+    if (rready) rreadyWire.send;
+  endaction;
+  return on_rflit (g, s);
+endmodule
 
 // convert to/from Sig Master interface
 ////////////////////////////////////////////////////////////////////////////////
@@ -170,4 +248,64 @@ module fromAXI4_R_Slave_Sig #(AXI4_R_Slave_Sig#(id_, data_, user_) s)
   (* fire_when_enabled, no_implicit_conditions *)
   rule forwardReady; s.rready(snk.canPut); endrule
   return toSource(buffer);
+endmodule
+
+// probe R flit
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_RFlit #( Bool rvalid
+                        , Bool rready
+                        , AXI4_RFlit #(id_, data_, user_) rflit) (Empty);
+  let rid_prb <- mkProbe;
+  let rdata_prb <- mkProbe;
+  let rresp_prb <- mkProbe;
+  let rlast_prb <- mkProbe;
+  let ruser_prb <- mkProbe;
+  let rvalid_prb <- mkProbe;
+  let rready_prb <- mkProbe;
+  (* fire_when_enabled, no_implicit_conditions *)
+  rule probe_signals;
+    rid_prb <= rflit.rid;
+    rdata_prb <= rflit.rdata;
+    rresp_prb <= rflit.rresp;
+    rlast_prb <= rflit.rlast;
+    ruser_prb <= rflit.ruser;
+    rvalid_prb <= rvalid;
+    rready_prb <= rready;
+  endrule
+endmodule
+
+// probe Master interface
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_R_Master_Sig #(AXI4_R_Master_Sig #(id_, data_, user_) m)
+                               (AXI4_R_Master_Sig #(id_, data_, user_));
+  augmentAXI4_R_Master_Sig (probeAXI4_RFlit, m);
+  return m;
+endmodule
+
+module probeAXI4_RFlit_Source #(src_t src) (Source #(flit_t))
+  provisos ( Alias #(flit_t, AXI4_RFlit #(id_, data_, user_))
+           , ToSource #(src_t, flit_t) );
+  let probed <- augmentSourceWith (probeAXI4_RFlit, src);
+  return probed;
+endmodule
+
+// probe Slave interface
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_R_Slave_Sig #(AXI4_R_Slave_Sig #(id_, data_, user_) s)
+                              (AXI4_R_Slave_Sig #(id_, data_, user_));
+  augmentAXI4_R_Slave_Sig (probeAXI4_RFlit, s);
+  return s;
+endmodule
+
+module probeAXI4_RFlit_Sink #(snk_t snk) (Sink #(flit_t))
+  provisos ( Alias #(flit_t, AXI4_RFlit #(id_, data_, user_))
+           , ToSink #(snk_t, flit_t) );
+  module f #(Bool canPut, Maybe #(flit_t) mData) (Empty);
+    probeAXI4_RFlit (isValid (mData), canPut, fromMaybe (?, mData));
+  endmodule
+  let probed <- augmentSinkWith (f, snk);
+  return probed;
 endmodule
