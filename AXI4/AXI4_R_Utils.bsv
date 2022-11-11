@@ -76,7 +76,9 @@ function AXI4_RFlit #(id, data, user_out)
 typeclass ToAXI4_RFlit#( type t
                        , numeric type id_
                        , numeric type data_
-                       , numeric type user_);
+                       , numeric type user_)
+  dependencies ( t determines (id_, data_, user_)
+               , (id_, data_, user_) determines t );
   function AXI4_RFlit#(id_, data_, user_) toAXI4_RFlit (t x);
 endtypeclass
 
@@ -87,7 +89,9 @@ endinstance
 typeclass FromAXI4_RFlit#( type t
                          , numeric type id_
                          , numeric type data_
-                         , numeric type user_);
+                         , numeric type user_)
+  dependencies ( t determines (id_, data_, user_)
+               , (id_, data_, user_) determines t );
   function t fromAXI4_RFlit (AXI4_RFlit#(id_, data_, user_) x);
 endtypeclass
 
