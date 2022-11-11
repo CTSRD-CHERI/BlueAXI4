@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2018-2021 Alexandre Joannou
+ * Copyright (c) 2018-2022 Alexandre Joannou
  * All rights reserved.
  *
  * This software was developed by SRI International and the University of
@@ -62,7 +62,9 @@ function AXI4_WFlit #(data, user_out)
 // typeclasses to convert to/from the flit type
 ////////////////////////////////////////////////////////////////////////////////
 
-typeclass ToAXI4_WFlit#(type t, numeric type data_, numeric type user_);
+typeclass ToAXI4_WFlit#(type t, numeric type data_, numeric type user_)
+  dependencies ( t determines (data_, user_)
+               , (data_, user_) determines t );
   function AXI4_WFlit#(data_, user_) toAXI4_WFlit (t x);
 endtypeclass
 
@@ -70,7 +72,9 @@ instance ToAXI4_WFlit#(AXI4_WFlit#(a, b), a, b);
   function toAXI4_WFlit = id;
 endinstance
 
-typeclass FromAXI4_WFlit#(type t, numeric type data_, numeric type user_);
+typeclass FromAXI4_WFlit#(type t, numeric type data_, numeric type user_)
+  dependencies ( t determines (data_, user_)
+               , (data_, user_) determines t );
   function t fromAXI4_WFlit (AXI4_WFlit#(data_, user_) x);
 endtypeclass
 
