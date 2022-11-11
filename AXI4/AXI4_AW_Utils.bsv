@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2018-2021 Alexandre Joannou
+ * Copyright (c) 2018-2022 Alexandre Joannou
  * All rights reserved.
  *
  * This software was developed by SRI International and the University of
@@ -94,7 +94,9 @@ function AXI4_AWFlit #(id, addr, user_out)
 typeclass ToAXI4_AWFlit#( type t
                         , numeric type id_
                         , numeric type addr_
-                        , numeric type user_);
+                        , numeric type user_)
+  dependencies ( t determines (id_, addr_, user_)
+               , (id_, addr_, user_) determines t );
   function AXI4_AWFlit#(id_, addr_, user_) toAXI4_AWFlit (t x);
 endtypeclass
 
@@ -105,7 +107,9 @@ endinstance
 typeclass FromAXI4_AWFlit#( type t
                           , numeric type id_
                           , numeric type addr_
-                          , numeric type user_);
+                          , numeric type user_)
+  dependencies ( t determines (id_, addr_, user_)
+               , (id_, addr_, user_) determines t );
   function t fromAXI4_AWFlit (AXI4_AWFlit#(id_, addr_, user_) x);
 endtypeclass
 
