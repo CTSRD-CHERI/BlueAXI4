@@ -26,10 +26,11 @@
  * @BERI_LICENSE_HEADER_END@
  */
 
-import SourceSink :: *;
+import BlueBasics :: *;
 
 import AXI4_Types :: *;
 
+import Probe :: *;
 import FIFOF :: *;
 import SpecialFIFOs :: *;
 
@@ -81,6 +82,79 @@ endtypeclass
 instance FromAXI4_WFlit#(AXI4_WFlit#(a, b), a, b);
   function fromAXI4_WFlit = id;
 endinstance
+
+// augment master / slave Sig "on action" function
+////////////////////////////////////////////////////////////////////////////////
+
+function AXI4_W_Master_Sig #(data_, user_)
+  on_wready ( function Action f ( Bool _valid
+                                , Bool _ready
+                                , AXI4_WFlit #(data_, user_) _flit )
+            , AXI4_W_Master_Sig #(data_, user_) m) =
+  interface AXI4_W_Master_Sig;
+    method wdata = m.wdata;
+    method wstrb = m.wstrb;
+    method wlast = m.wlast;
+    method wuser = m.wuser;
+    method wvalid  = m.wvalid;
+    method wready (rdy) = action
+      f (m.wvalid, rdy, AXI4_WFlit { wdata: m.wdata
+                                   , wstrb: m.wstrb
+                                   , wlast: m.wlast
+                                   , wuser: m.wuser });
+      m.wready (rdy);
+    endaction;
+  endinterface;
+
+function AXI4_W_Slave_Sig #(data_, user_)
+  on_wflit ( function Action f ( Bool _valid
+                               , Bool _ready
+                               , AXI4_WFlit #(data_, user_) _flit )
+           , AXI4_W_Slave_Sig #(data_, user_) s ) =
+  interface AXI4_W_Slave_Sig;
+    method wflit (wvalid, wdata, wstrb, wlast, wuser) = action
+      f (wvalid, s.wready, AXI4_WFlit { wdata: wdata
+                                      , wstrb: wstrb
+                                      , wlast: wlast
+                                      , wuser: wuser });
+      s.wflit (wvalid, wdata, wstrb, wlast, wuser);
+    endaction;
+    method wready = s.wready;
+  endinterface;
+
+// augment master / slave Sig
+////////////////////////////////////////////////////////////////////////////////
+
+module augmentAXI4_W_Master_Sig #(
+    function module #(Empty) f (Bool wvalid, Bool wready, flit_t wflit)
+  , w_master_sig m) (w_master_sig)
+  provisos ( Alias #(w_master_sig, AXI4_W_Master_Sig #(data_, user_))
+           , Alias #(flit_t, AXI4_WFlit #(data_, user_)) );
+  let wreadyWire <- mkPulseWire;
+  f (m.wvalid, wreadyWire, AXI4_WFlit { wdata: m.wdata
+                                      , wstrb: m.wstrb
+                                      , wlast: m.wlast
+                                      , wuser: m.wuser });
+  function g (_wvalid , wready , _flit) = action
+    if (wready) wreadyWire.send;
+  endaction;
+  return on_wready (g, m);
+endmodule
+
+module augmentAXI4_W_Slave_Sig #(
+    function module #(Empty) f (Bool wvalid, Bool wready, flit_t wflit)
+  , w_slave_sig s) (w_slave_sig)
+  provisos ( Alias #(w_slave_sig, AXI4_W_Slave_Sig #(data_, user_))
+           , Alias #(flit_t, AXI4_WFlit #(data_, user_)) );
+  let wvalidWire <- mkPulseWire;
+  let wflitWire <- mkDWire (?);
+  f (wvalidWire, s.wready, wflitWire);
+  function g (wvalid, _wready, wflit) = action
+    if (wvalid) wvalidWire.send;
+    wflitWire <= wflit;
+  endaction;
+  return on_wflit (g, s);
+endmodule
 
 // convert to/from Sig Master interface
 ////////////////////////////////////////////////////////////////////////////////
@@ -148,4 +222,62 @@ module fromAXI4_W_Slave_Sig #(AXI4_W_Slave_Sig#(data_, user_) s)
   (* fire_when_enabled, no_implicit_conditions *)
   rule dropFlit (src.canPeek && s.wready); src.drop; endrule
   return toSink(buffer);
+endmodule
+
+// probe W flit
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_WFlit #( Bool wvalid
+                        , Bool wready
+                        , AXI4_WFlit #(data_, user_) wflit) (Empty);
+  let wdata_prb <- mkProbe;
+  let wstrb_prb <- mkProbe;
+  let wlast_prb <- mkProbe;
+  let wuser_prb <- mkProbe;
+  let wvalid_prb <- mkProbe;
+  let wready_prb <- mkProbe;
+  (* fire_when_enabled, no_implicit_conditions *)
+  rule probe_signals;
+    wdata_prb <= wflit.wdata;
+    wstrb_prb <= wflit.wstrb;
+    wlast_prb <= wflit.wlast;
+    wuser_prb <= wflit.wuser;
+    wvalid_prb <= wvalid;
+    wready_prb <= wready;
+  endrule
+endmodule
+
+// probe Master interface
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_W_Master_Sig #(AXI4_W_Master_Sig #(data_, user_) m)
+                               (AXI4_W_Master_Sig #(data_, user_));
+  augmentAXI4_W_Master_Sig (probeAXI4_WFlit, m);
+  return m;
+endmodule
+
+module probeAXI4_WFlit_Source #(src_t src) (Source #(flit_t))
+  provisos ( Alias #(flit_t, AXI4_WFlit #(data_, user_))
+           , ToSource #(src_t, flit_t) );
+  let probed <- augmentSourceWith (probeAXI4_WFlit, src);
+  return probed;
+endmodule
+
+// probe Slave interface
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_W_Slave_Sig #(AXI4_W_Slave_Sig #(data_, user_) s)
+                              (AXI4_W_Slave_Sig #(data_, user_));
+  augmentAXI4_W_Slave_Sig (probeAXI4_WFlit, s);
+  return s;
+endmodule
+
+module probeAXI4_WFlit_Sink #(snk_t snk) (Sink #(flit_t))
+  provisos ( Alias #(flit_t, AXI4_WFlit #(data_, user_))
+           , ToSink #(snk_t, flit_t) );
+  module f #(Bool canPut, Maybe #(flit_t) mData) (Empty);
+    probeAXI4_WFlit (isValid (mData), canPut, fromMaybe (?, mData));
+  endmodule
+  let probed <- augmentSinkWith (f, snk);
+  return probed;
 endmodule
