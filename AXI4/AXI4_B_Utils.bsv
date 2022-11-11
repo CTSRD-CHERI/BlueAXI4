@@ -26,10 +26,11 @@
  * @BERI_LICENSE_HEADER_END@
  */
 
-import SourceSink :: *;
+import BlueBasics :: *;
 
 import AXI4_Types :: *;
 
+import Probe :: *;
 import FIFOF :: *;
 import SpecialFIFOs :: *;
 
@@ -78,6 +79,75 @@ endtypeclass
 instance FromAXI4_BFlit#(AXI4_BFlit#(a, b), a, b);
   function fromAXI4_BFlit = id;
 endinstance
+
+// augment master / slave Sig "on action" function
+////////////////////////////////////////////////////////////////////////////////
+
+function AXI4_B_Master_Sig #(id_, user_)
+  on_bready ( function Action f ( Bool _valid
+                                , Bool _ready
+                                , AXI4_BFlit #(id_, user_) _flit )
+           , AXI4_B_Master_Sig #(id_, user_) m ) =
+  interface AXI4_B_Master_Sig;
+    method bflit (bvalid, bid, bresp, buser) = action
+      f (bvalid, m.bready, AXI4_BFlit { bid: bid
+                                      , bresp: bresp
+                                      , buser: buser });
+      m.bflit (bvalid, bid, bresp, buser);
+    endaction;
+    method bready = m.bready;
+  endinterface;
+
+function AXI4_B_Slave_Sig #(id_, user_)
+  on_bflit ( function Action f ( Bool _valid
+                               , Bool _ready
+                               , AXI4_BFlit #(id_, user_) _flit )
+            , AXI4_B_Slave_Sig #(id_, user_) s) =
+  interface AXI4_B_Slave_Sig;
+    method bid = s.bid;
+    method bresp = s.bresp;
+    method buser = s.buser;
+    method bvalid  = s.bvalid;
+    method bready (rdy) = action
+      f (s.bvalid, rdy, AXI4_BFlit { bid: s.bid
+                                   , bresp: s.bresp
+                                   , buser: s.buser });
+      s.bready (rdy);
+    endaction;
+  endinterface;
+
+// augment master / slave Sig
+////////////////////////////////////////////////////////////////////////////////
+
+module augmentAXI4_B_Master_Sig #(
+    function module #(Empty) f (Bool bvalid, Bool bready, flit_t bflit)
+  , b_master_sig m) (b_master_sig)
+  provisos ( Alias #(b_master_sig, AXI4_B_Master_Sig #(id_, user_))
+           , Alias #(flit_t, AXI4_BFlit #(id_, user_)) );
+  let bvalidWire <- mkPulseWire;
+  let bflitWire <- mkDWire (?);
+  f (bvalidWire, m.bready, bflitWire);
+  function g (bvalid, _bready, bflit) = action
+    if (bvalid) bvalidWire.send;
+    bflitWire <= bflit;
+  endaction;
+  return on_bready (g, m);
+endmodule
+
+module augmentAXI4_B_Slave_Sig #(
+    function module #(Empty) f (Bool bvalid, Bool bready, flit_t bflit)
+  , b_slave_sig s) (b_slave_sig)
+  provisos ( Alias #(b_slave_sig, AXI4_B_Slave_Sig #(id_, user_))
+           , Alias #(flit_t, AXI4_BFlit #(id_, user_)) );
+  let breadyWire <- mkPulseWire;
+  f (s.bvalid, breadyWire, AXI4_BFlit { bid: s.bid
+                                      , bresp: s.bresp
+                                      , buser: s.buser });
+  function g (_bvalid , bready , _flit) = action
+    if (bready) breadyWire.send;
+  endaction;
+  return on_bflit (g, s);
+endmodule
 
 // convert to/from Sig Master interface
 ////////////////////////////////////////////////////////////////////////////////
@@ -137,4 +207,60 @@ module fromAXI4_B_Slave_Sig #(AXI4_B_Slave_Sig#(id_, user_) s)
   (* fire_when_enabled, no_implicit_conditions *)
   rule forwardReady; s.bready(snk.canPut); endrule
   return toSource(buffer);
+endmodule
+
+// probe B flit
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_BFlit #( Bool bvalid
+                        , Bool bready
+                        , AXI4_BFlit #(id_, user_) bflit) (Empty);
+  let bid_prb <- mkProbe;
+  let bresp_prb <- mkProbe;
+  let buser_prb <- mkProbe;
+  let bvalid_prb <- mkProbe;
+  let bready_prb <- mkProbe;
+  (* fire_when_enabled, no_implicit_conditions *)
+  rule probe_signals;
+    bid_prb <= bflit.bid;
+    bresp_prb <= bflit.bresp;
+    buser_prb <= bflit.buser;
+    bvalid_prb <= bvalid;
+    bready_prb <= bready;
+  endrule
+endmodule
+
+// probe Master interface
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_B_Master_Sig #(AXI4_B_Master_Sig #(id_, user_) m)
+                               (AXI4_B_Master_Sig #(id_, user_));
+  augmentAXI4_B_Master_Sig (probeAXI4_BFlit, m);
+  return m;
+endmodule
+
+module probeAXI4_BFlit_Source #(src_t src) (Source #(flit_t))
+  provisos ( Alias #(flit_t, AXI4_BFlit #(id_, user_))
+           , ToSource #(src_t, flit_t) );
+  let probed <- augmentSourceWith (probeAXI4_BFlit, src);
+  return probed;
+endmodule
+
+// probe Slave interface
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_B_Slave_Sig #(AXI4_B_Slave_Sig #(id_, user_) s)
+                              (AXI4_B_Slave_Sig #(id_, user_));
+  augmentAXI4_B_Slave_Sig (probeAXI4_BFlit, s);
+  return s;
+endmodule
+
+module probeAXI4_BFlit_Sink #(snk_t snk) (Sink #(flit_t))
+  provisos ( Alias #(flit_t, AXI4_BFlit #(id_, user_))
+           , ToSink #(snk_t, flit_t) );
+  module f #(Bool canPut, Maybe #(flit_t) mData) (Empty);
+    probeAXI4_BFlit (isValid (mData), canPut, fromMaybe (?, mData));
+  endmodule
+  let probed <- augmentSinkWith (f, snk);
+  return probed;
 endmodule
