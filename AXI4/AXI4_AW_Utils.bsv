@@ -26,10 +26,11 @@
  * @BERI_LICENSE_HEADER_END@
  */
 
-import SourceSink :: *;
+import BlueBasics :: *;
 
 import AXI4_Types :: *;
 
+import Probe :: *;
 import FIFOF :: *;
 import SpecialFIFOs :: *;
 
@@ -116,6 +117,129 @@ endtypeclass
 instance FromAXI4_AWFlit#(AXI4_AWFlit#(a, b, c), a, b, c);
   function fromAXI4_AWFlit = id;
 endinstance
+
+// augment master / slave Sig "on action" function
+////////////////////////////////////////////////////////////////////////////////
+
+function AXI4_AW_Master_Sig #(id_, addr_, user_)
+  on_awready ( function Action f ( Bool _valid
+                                 , Bool _ready
+                                 , AXI4_AWFlit #(id_, addr_, user_) _flit )
+             , AXI4_AW_Master_Sig #(id_, addr_, user_) m) =
+  interface AXI4_AW_Master_Sig;
+    method awid     = m.awid;
+    method awaddr   = m.awaddr;
+    method awlen    = m.awlen;
+    method awsize   = m.awsize;
+    method awburst  = m.awburst;
+    method awlock   = m.awlock;
+    method awcache  = m.awcache;
+    method awprot   = m.awprot;
+    method awqos    = m.awqos;
+    method awregion = m.awregion;
+    method awuser   = m.awuser;
+    method awvalid  = m.awvalid;
+    method awready (rdy) = action
+      f (m.awvalid, rdy, AXI4_AWFlit { awid:     m.awid
+                                     , awaddr:   m.awaddr
+                                     , awlen:    m.awlen
+                                     , awsize:   m.awsize
+                                     , awburst:  m.awburst
+                                     , awlock:   m.awlock
+                                     , awcache:  m.awcache
+                                     , awprot:   m.awprot
+                                     , awqos:    m.awqos
+                                     , awregion: m.awregion
+                                     , awuser:   m.awuser });
+      m.awready (rdy);
+    endaction;
+  endinterface;
+
+function AXI4_AW_Slave_Sig #(id_, addr_, user_)
+  on_awflit ( function Action f ( Bool _valid
+                                , Bool _ready
+                                , AXI4_AWFlit #(id_, addr_, user_) _flit )
+            , AXI4_AW_Slave_Sig #(id_, addr_, user_) s ) =
+  interface AXI4_AW_Slave_Sig;
+    method awflit ( awvalid
+                  , awid
+                  , awaddr
+                  , awlen
+                  , awsize
+                  , awburst
+                  , awlock
+                  , awcache
+                  , awprot
+                  , awqos
+                  , awregion
+                  , awuser ) = action
+      f ( awvalid, s.awready, AXI4_AWFlit { awid:     awid
+                                          , awaddr:   awaddr
+                                          , awlen:    awlen
+                                          , awsize:   awsize
+                                          , awburst:  awburst
+                                          , awlock:   awlock
+                                          , awcache:  awcache
+                                          , awprot:   awprot
+                                          , awqos:    awqos
+                                          , awregion: awregion
+                                          , awuser:   awuser } );
+      s.awflit ( awvalid
+               , awid
+               , awaddr
+               , awlen
+               , awsize
+               , awburst
+               , awlock
+               , awcache
+               , awprot
+               , awqos
+               , awregion
+               , awuser );
+    endaction;
+    method awready = s.awready;
+  endinterface;
+
+// augment master / slave Sig
+////////////////////////////////////////////////////////////////////////////////
+
+module augmentAXI4_AW_Master_Sig #(
+    function module #(Empty) f (Bool awvalid, Bool awready, flit_t awflit)
+  , aw_master_sig m) (aw_master_sig)
+  provisos ( Alias #(aw_master_sig, AXI4_AW_Master_Sig #(id_, addr_, user_))
+           , Alias #(flit_t, AXI4_AWFlit #(id_, addr_, user_)) );
+  let awreadyWire <- mkPulseWire;
+  f (m.awvalid, awreadyWire, AXI4_AWFlit { awid:     m.awid
+                                         , awaddr:   m.awaddr
+                                         , awlen:    m.awlen
+                                         , awsize:   m.awsize
+                                         , awburst:  m.awburst
+                                         , awlock:   m.awlock
+                                         , awcache:  m.awcache
+                                         , awprot:   m.awprot
+                                         , awqos:    m.awqos
+                                         , awregion: m.awregion
+                                         , awuser:   m.awuser });
+  function g (_awvalid , awready , _flit) = action
+    if (awready) awreadyWire.send;
+  endaction;
+  return on_awready (g, m);
+endmodule
+
+module augmentAXI4_AW_Slave_Sig #(
+    function module #(Empty) f (Bool awvalid, Bool awready, flit_t awflit)
+  , aw_slave_sig s) (aw_slave_sig)
+  provisos ( Alias #(aw_slave_sig, AXI4_AW_Slave_Sig #(id_, addr_, user_))
+           , Alias #(flit_t, AXI4_AWFlit #(id_, addr_, user_)) );
+  let awvalidWire <- mkPulseWire;
+  let awflitWire <- mkDWire (?);
+  f (awvalidWire, s.awready, awflitWire);
+  function g (awvalid, _awready, awflit) = action
+    if (awvalid) awvalidWire.send;
+    awflitWire <= awflit;
+  endaction;
+  return on_awflit (g, s);
+endmodule
 
 // convert to/from Sig Master interface
 ////////////////////////////////////////////////////////////////////////////////
@@ -225,4 +349,76 @@ module fromAXI4_AW_Slave_Sig #(AXI4_AW_Slave_Sig#(id_, addr_, user_) s)
   (* fire_when_enabled, no_implicit_conditions *)
   rule dropFlit (src.canPeek && s.awready); src.drop; endrule
   return toSink(buffer);
+endmodule
+
+// probe AW flit
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_AWFlit #( Bool awvalid
+                         , Bool awready
+                         , AXI4_AWFlit #(id_, addr_, user_) awflit) (Empty);
+  let awid_prb <- mkProbe;
+  let awaddr_prb <- mkProbe;
+  let awlen_prb <- mkProbe;
+  let awsize_prb <- mkProbe;
+  let awburst_prb <- mkProbe;
+  let awlock_prb <- mkProbe;
+  let awcache_prb <- mkProbe;
+  let awprot_prb <- mkProbe;
+  let awqos_prb <- mkProbe;
+  let awregion_prb <- mkProbe;
+  let awuser_prb <- mkProbe;
+  let awvalid_prb <- mkProbe;
+  let awready_prb <- mkProbe;
+  (* fire_when_enabled, no_implicit_conditions *)
+  rule probe_signals;
+    awid_prb <= awflit.awid;
+    awaddr_prb <= awflit.awaddr;
+    awlen_prb <= awflit.awlen;
+    awsize_prb <= awflit.awsize;
+    awburst_prb <= awflit.awburst;
+    awlock_prb <= awflit.awlock;
+    awcache_prb <= awflit.awcache;
+    awprot_prb <= awflit.awprot;
+    awqos_prb <= awflit.awqos;
+    awregion_prb <= awflit.awregion;
+    awuser_prb <= awflit.awuser;
+    awvalid_prb <= awvalid;
+    awready_prb <= awready;
+  endrule
+endmodule
+
+// probe Master interface
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_AW_Master_Sig #(AXI4_AW_Master_Sig #(id_, addr_, user_) m)
+                                (AXI4_AW_Master_Sig #(id_, addr_, user_));
+  augmentAXI4_AW_Master_Sig (probeAXI4_AWFlit, m);
+  return m;
+endmodule
+
+module probeAXI4_AWFlit_Source #(src_t src) (Source #(flit_t))
+  provisos ( Alias #(flit_t, AXI4_AWFlit #(id_, addr_, user_))
+           , ToSource #(src_t, flit_t) );
+  let probed <- augmentSourceWith (probeAXI4_AWFlit, src);
+  return probed;
+endmodule
+
+// probe Slave interface
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_AW_Slave_Sig #(AXI4_AW_Slave_Sig #(id_, addr_, user_) s)
+                               (AXI4_AW_Slave_Sig #(id_, addr_, user_));
+  augmentAXI4_AW_Slave_Sig (probeAXI4_AWFlit, s);
+  return s;
+endmodule
+
+module probeAXI4_AWFlit_Sink #(snk_t snk) (Sink #(flit_t))
+  provisos ( Alias #(flit_t, AXI4_AWFlit #(id_, addr_, user_))
+           , ToSink #(snk_t, flit_t) );
+  module f #(Bool canPut, Maybe #(flit_t) mData) (Empty);
+    probeAXI4_AWFlit (isValid (mData), canPut, fromMaybe (?, mData));
+  endmodule
+  let probed <- augmentSinkWith (f, snk);
+  return probed;
 endmodule
