@@ -225,6 +225,42 @@ module monitorAXI4_Slave #(AXI4_Slave#(a, b, c, d, e, f, g, h) slave)
   endinterface;
 endmodule
 
+////////////////////////
+// AXI4 probing utils //
+////////////////////////////////////////////////////////////////////////////////
+
+module probeAXI4_Master #(AXI4_Master #(a, b, c, d, e, f, g, h) master)
+                         (AXI4_Master #(a, b, c, d, e, f, g, h));
+  let aw <- probeAXI4_AWFlit_Source (master.aw);
+  let  w <- probeAXI4_WFlit_Source  (master.w);
+  let  b <- probeAXI4_BFlit_Sink    (master.b);
+  let ar <- probeAXI4_ARFlit_Source (master.ar);
+  let  r <- probeAXI4_RFlit_Sink    (master.r);
+  return interface AXI4_Master;
+    interface aw = aw;
+    interface  w =  w;
+    interface  b =  b;
+    interface ar = ar;
+    interface  r =  r;
+  endinterface;
+endmodule
+
+module probeAXI4_Slave #(AXI4_Slave #(a, b, c, d, e, f, g, h) slave)
+                        (AXI4_Slave #(a, b, c, d, e, f, g, h));
+  let aw <- probeAXI4_AWFlit_Sink  (slave.aw);
+  let  w <- probeAXI4_WFlit_Sink   (slave.w);
+  let  b <- probeAXI4_BFlit_Source (slave.b);
+  let ar <- probeAXI4_ARFlit_Sink  (slave.ar);
+  let  r <- probeAXI4_RFlit_Source (slave.r);
+  return interface AXI4_Slave;
+    interface aw = aw;
+    interface  w =  w;
+    interface  b =  b;
+    interface ar = ar;
+    interface  r =  r;
+  endinterface;
+endmodule
+
 ///////////////////////////////////
 // to/from "Sig" interface utils //
 ////////////////////////////////////////////////////////////////////////////////
