@@ -87,6 +87,13 @@ instance Literal #(AXI4_Size);
     default: return False;
   endcase;
 endinstance
+instance PrimIndex #(AXI4_Size, SizeOf #(AXI4_Size));
+  function isStaticIndex (_) = False;
+  function toStaticIndex =
+    error ("toStaticIndex should not be called on AXI4_Size");
+  function toDynamicIndex = pack;
+endinstance
+instance PrimShiftIndex #(AXI4_Size, SizeOf #(AXI4_Size)); endinstance
 
 function Bit #(TExp#(SizeOf#(AXI4_Size))) fromAXI4_Size (AXI4_Size sz) =
   1 << pack(sz);
