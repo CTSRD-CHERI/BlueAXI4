@@ -49,7 +49,9 @@ module change_AXI4_Master_Id #( // received parameters
                                 // received master port
                               , AXI4_Master #(t_id_a,b,c,d,e,f,g,h) mstr_a )
   // returned interface
-  (AXI4_Master #(t_id_b,b,c,d,e,f,g,h));
+  (AXI4_Master #(t_id_b,b,c,d,e,f,g,h))
+  // constraints
+  provisos (Add #(_, TLog #(nbEntries), t_id_b));
   Tuple2 #( AXI4_Slave  #(t_id_a,b,c,d,e,f,g,h)
           , AXI4_Master #(t_id_b,b,c,d,e,f,g,h) )
     ifcs <- mkAXI4IDNameSpaceCrossing (proxyTableSz, proxyRegsCntSz);
@@ -64,7 +66,9 @@ module change_AXI4_Slave_Id #( // received parameters
                                // received master port
                              , AXI4_Slave #(t_id_a,b,c,d,e,f,g,h) slv_a )
   // returned interface
-  (AXI4_Slave #(t_id_b,b,c,d,e,f,g,h));
+  (AXI4_Slave #(t_id_b,b,c,d,e,f,g,h))
+  // constraints
+  provisos (Add #(_, TLog #(nbEntries), t_id_a));
   Tuple2 #( AXI4_Slave  #(t_id_b,b,c,d,e,f,g,h)
           , AXI4_Master #(t_id_a,b,c,d,e,f,g,h) )
     ifcs <- mkAXI4IDNameSpaceCrossing (proxyTableSz, proxyRegsCntSz);
@@ -78,10 +82,12 @@ module mkAXI4IDNameSpaceCrossing
   #( parameter NumProxy #(nbEntries) proxyTableSz
    , parameter NumProxy #(regsCntSz) proxyRegsCntSz )
   // returned interface
-  ( Tuple2 #( AXI4_Slave  #( id_X, addr_, data_
-                           , awuser_, wuser_, buser_, aruser_, ruser_ )
-            , AXI4_Master #( id_Y, addr_, data_
-                           , awuser_, wuser_, buser_, aruser_, ruser_ )));
+  (Tuple2 #( AXI4_Slave  #( id_X, addr_, data_
+                          , awuser_, wuser_, buser_, aruser_, ruser_ )
+           , AXI4_Master #( id_Y, addr_, data_
+                          , awuser_, wuser_, buser_, aruser_, ruser_ ) ))
+  // constraints
+  provisos (Add #(_, TLog #(nbEntries), id_Y) );
   match {.aw_X, .b_X, .aw_Y, .b_Y}
     <- mkAXI4WritesIDNameSpaceCrossing (proxyTableSz, proxyRegsCntSz);
   match {.ar_X, .r_X, .ar_Y, .r_Y}
@@ -109,10 +115,12 @@ module mkAXI4WritesIDNameSpaceCrossing
   #( parameter NumProxy #(nbEntries) proxyTableSz
    , parameter NumProxy #(regsCntSz) proxyRegsCntSz )
   // returned interface
-  ( Tuple4 #( Sink #(AXI4_AWFlit #(id_X, addr_, awuser_))
-            , Source #(AXI4_BFlit #(id_X, buser_))
-            , Source #(AXI4_AWFlit #(id_Y, addr_, awuser_))
-            , Sink #(AXI4_BFlit #(id_Y, buser_)) ));
+  (Tuple4 #( Sink #(AXI4_AWFlit #(id_X, addr_, awuser_))
+           , Source #(AXI4_BFlit #(id_X, buser_))
+           , Source #(AXI4_AWFlit #(id_Y, addr_, awuser_))
+           , Sink #(AXI4_BFlit #(id_Y, buser_)) ))
+  // constraints
+  provisos (Add #(_, TLog #(nbEntries), id_Y) );
   let awff_X <- mkFIFOF;
   let bff_X  <- mkFIFOF;
   let awff_Y <- mkFIFOF;
@@ -151,10 +159,12 @@ module mkAXI4ReadsIDNameSpaceCrossing
   #( parameter NumProxy #(nbEntries) proxyTableSz
    , parameter NumProxy #(regsCntSz) proxyRegsCntSz )
   // returned interface
-  ( Tuple4 #( Sink #(AXI4_ARFlit #(id_X, addr_, aruser_))
-            , Source #(AXI4_RFlit #(id_X, data_, ruser_))
-            , Source #(AXI4_ARFlit #(id_Y, addr_, aruser_))
-            , Sink #(AXI4_RFlit #(id_Y, data_, ruser_)) ));
+  (Tuple4 #( Sink #(AXI4_ARFlit #(id_X, addr_, aruser_))
+           , Source #(AXI4_RFlit #(id_X, data_, ruser_))
+           , Source #(AXI4_ARFlit #(id_Y, addr_, aruser_))
+           , Sink #(AXI4_RFlit #(id_Y, data_, ruser_)) ))
+  // constraints
+  provisos (Add #(_, TLog #(nbEntries), id_Y) );
   let arff_X <- mkFIFOF;
   let rff_X  <- mkFIFOF;
   let arff_Y <- mkFIFOF;
