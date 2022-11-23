@@ -48,6 +48,12 @@ import BlueBasics :: *;
 import AXI4_Types :: *;
 import AXI4_Common_Types :: *;
 
+// debug helpers
+
+Integer verbosity_level = 0;
+function Action vPrint (Integer lvl, Fmt fmt) =
+  action if (verbosity_level >= lvl) $display ("%0t - ", $time, fmt); endaction;
+
 //////////////////////
 // exposed wrappers //
 ////////////////////////////////////////////////////////////////////////////////
@@ -193,8 +199,9 @@ module mkAXI4WritesNarrowToWide
                                         , TExp #(SizeOf #(AXI4_Size)) ))
            , NumAlias #(in_bit_idx_t, TLog #(data_X))
            , NumAlias #(in_byte_idx_t, TLog #(TDiv #(data_X, 8)))
+           , NumAlias #(out_byte_t, TDiv #(data_Y, 8))
            , NumAlias #(out_bit_idx_t, TLog #(data_Y))
-           , NumAlias #(out_byte_idx_t, TLog #(TDiv #(data_Y, 8)))
+           , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
            , Add #(_a, data_X, data_Y)
            , Add #(_b, TDiv#(data_X, 8), TDiv#(data_Y, 8))
            , Mul #(TDiv#(data_Y, 8), 8, data_Y)
@@ -223,27 +230,46 @@ module mkAXI4WritesNarrowToWide
 
   // handle address flits
   rule aw_send;
-    let awflitIn <- get (awffIn);
+    vPrint (1, $format ("%m.mkAXI4WritesNarrowToWide.aw_send"));
+    AXI4_AWFlit #(id_, addr_, awuser_) awflitIn <- get (awffIn);
+    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.aw_send, "
+                       , "awflitIn ", fshow (awflitIn) ));
     Bit #(nBytes_t) nBytes =
-      (zeroExtend (awflitIn.awlen) + 1) << awflitIn.awsize;
-    AXI4_Len awlenOut = truncate ((nBytes >> valueOf (TDiv #(data_Y, 8))) - 1);
-    AXI4_Size awsizeOut =
-      unpack (min ( fromInteger (valueOf (TLog #(TDiv #(data_Y, 8))))
-                  , truncate (log2 (nBytes)) ));
-    awffOut.enq (AXI4_AWFlit { awid: awflitIn.awid
-                             , awaddr: awflitIn.awaddr
-                             , awlen: truncate (awlenOut)
-                             , awsize: awsizeOut
-                             , awburst: awflitIn.awburst
-                             , awlock: awflitIn.awlock
-                             , awcache: awflitIn.awcache
-                             , awprot: awflitIn.awprot
-                             , awqos: awflitIn.awqos
-                             , awregion: awflitIn.awregion
-                             , awuser: awflitIn.awuser });
-    reqff.enq (tuple6 ( nBytes, awflitIn.awaddr
-                      , awflitIn.awsize, awflitIn.awlen
-                      , awsizeOut, awlenOut ));
+      (zeroExtend (awflitIn.awlen) + 1) << pack (awflitIn.awsize);
+    AXI4_Len awlenOut =
+      truncate (nBytes >> ((valueOf (TDiv #(data_Y, 8))) - 1));
+    AXI4_Size awsizeOut = awflitIn.awsize;
+    Bit #(TExp #(SizeOf #(AXI4_Size))) busBytes =
+      fromInteger (valueOf (out_byte_t));
+    if (nBytes >= zeroExtend (busBytes)) begin
+      case (toAXI4_Size (busBytes)) matches
+        tagged Valid .x: awsizeOut = x;
+        default : begin
+          $display ("error: impossible awsize encountered");
+          $finish;
+        end
+      endcase
+    end
+    let awflitOut = AXI4_AWFlit { awid: awflitIn.awid
+                                , awaddr: awflitIn.awaddr
+                                , awlen: truncate (awlenOut)
+                                , awsize: awsizeOut
+                                , awburst: awflitIn.awburst
+                                , awlock: awflitIn.awlock
+                                , awcache: awflitIn.awcache
+                                , awprot: awflitIn.awprot
+                                , awqos: awflitIn.awqos
+                                , awregion: awflitIn.awregion
+                                , awuser: awflitIn.awuser };
+    awffOut.enq (awflitOut);
+    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.aw_send, "
+                       , "awflitOut ", fshow (awflitOut) ));
+    let reqffpayload = tuple6 ( nBytes, awflitIn.awaddr
+                              , awflitIn.awsize, awflitIn.awlen
+                              , awsizeOut, awlenOut );
+    reqff.enq (reqffpayload);
+    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.aw_send, "
+                       , "reqffpayload ", fshow (reqffpayload) ));
   endrule
 
   // handle data flits
@@ -251,11 +277,16 @@ module mkAXI4WritesNarrowToWide
   Reg #(Bit #(TDiv #(data_Y, 8))) strb <- mkReg (0);
   Reg #(Bit #(data_Y)) data <- mkRegU;
   rule w_accumulate_send;
+    vPrint (1, $format ("%m.mkAXI4WritesNarrowToWide.w_accumulate_send"));
+    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "reqff.first ", fshow (reqff.first) ));
     match {.nBytes, .addr, .awsizeIn, .awlenIn, .awsizeOut, .awlenOut} =
       reqff.first;
     let wflitIn <- get (wffIn);
+    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "wflitIn ", fshow (wflitIn) ));
 
-    Bit #(out_byte_idx_t) width = 1 << awsizeIn;
+    Bit #(out_byte_idx_t) width = 1 << pack (awsizeIn);
     Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(in_byte_idx_t) loIn = truncate (loOut);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
@@ -275,21 +306,31 @@ module mkAXI4WritesNarrowToWide
 
     // did we reach the last flit
     Bool isLast = newCnt == nBytes;
+    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "newCnt ", fshow (newCnt) ));
+    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "nBytes ", fshow (nBytes) ));
 
     // full flit ready
     Bit #(out_byte_idx_t) cntOffset = truncate (newCnt);
-    if (cntOffset == 0) begin
-      wffOut.enq (AXI4_WFlit { wdata: newData
-                             , wstrb: newStrb
-                             , wlast: isLast
-                             , wuser: wflitIn.wuser // XXX better to do here?
-                             });
+    if (isLast || cntOffset == 0) begin
+      let wflitOut =  AXI4_WFlit { wdata: newData
+                                 , wstrb: newStrb
+                                 , wlast: isLast
+                                   // XXX better thing to do here?
+                                 , wuser: wflitIn.wuser
+                                 };
+      wffOut.enq (wflitOut);
+      vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                         , "wflitOut ", fshow (wflitOut) ));
       newData = 0;
       newStrb = 0;
     end
 
     // finished the burst
     if (isLast) begin
+      vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                         , "burst finished"));
 
       // assertions
       // must build with the "-check-assert" flag to enable
@@ -304,6 +345,18 @@ module mkAXI4WritesNarrowToWide
     cnt <= newCnt;
     data <= newData;
     strb <= newStrb;
+    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "cnt ", fshow (cnt) ));
+    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "newCnt ", fshow (newCnt) ));
+    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "data ", fshow (data) ));
+    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "newData ", fshow (newData) ));
+    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "strb ", fshow (strb) ));
+    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "newStrb ", fshow (newStrb) ));
 
   endrule
 
@@ -331,8 +384,9 @@ module mkAXI4ReadsNarrowToWide
                                         , TExp #(SizeOf #(AXI4_Size)) ))
            , NumAlias #(in_bit_idx_t, TLog #(data_X))
            , NumAlias #(in_byte_idx_t, TLog #(TDiv #(data_X, 8)))
+           , NumAlias #(out_byte_t, TDiv #(data_Y, 8))
            , NumAlias #(out_bit_idx_t, TLog #(data_Y))
-           , NumAlias #(out_byte_idx_t, TLog #(TDiv #(data_Y, 8)))
+           , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
            , Alias #(local_info, Tuple4 #( Bit #(nBytes_t)
                                          , Bit #(addr_)
                                          , AXI4_Size
@@ -356,42 +410,68 @@ module mkAXI4ReadsNarrowToWide
     rffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
 
   // local state to remember addresses
-  Vector #(TLog #(id_), FIFOF #(local_info)) addrff <- replicateM (mkFIFOF);
-  //let addrff <- replicateM (mkFIFOF);
+  Vector #(TExp #(id_), FIFOF #(local_info)) addrff <- replicateM (mkFIFOF);
 
   rule ar_send;
+    vPrint (1, $format ("%m.mkAXI4ReadsNarrowToWide.ar_send"));
     let arflitIn <- get (arffIn);
+    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, arflitIn "
+                       , fshow (arflitIn) ));
     Bit #(nBytes_t) nBytes =
-      (zeroExtend (arflitIn.arlen) + 1) << arflitIn.arsize;
-    AXI4_Len arlenOut = truncate ((nBytes >> valueOf (TDiv #(data_Y, 8))) - 1);
-    AXI4_Size arsizeOut =
-      unpack (min ( fromInteger (valueOf (TLog #(TDiv #(data_Y, 8))))
-                  , truncate (log2 (nBytes)) ));
-    arffOut.enq (AXI4_ARFlit { arid: arflitIn.arid
-                             , araddr: arflitIn.araddr
-                             , arlen: arlenOut
-                             , arsize: arsizeOut
-                             , arburst: arflitIn.arburst
-                             , arlock: arflitIn.arlock
-                             , arcache: arflitIn.arcache
-                             , arprot: arflitIn.arprot
-                             , arqos: arflitIn.arqos
-                             , arregion: arflitIn.arregion
-                             , aruser: arflitIn.aruser });
-    addrff[arflitIn.arid].enq (tuple4 ( nBytes
-                                      , arflitIn.araddr
-                                      , arflitIn.arsize
-                                      , arflitIn.arlen ));
+      (zeroExtend (arflitIn.arlen) + 1) << pack (arflitIn.arsize);
+    AXI4_Len arlenOut =
+      truncate (nBytes >> ((valueOf (TDiv #(data_Y, 8))) - 1));
+    AXI4_Size arsizeOut = arflitIn.arsize;
+    Bit #(TExp #(SizeOf #(AXI4_Size))) busBytes =
+      fromInteger (valueOf (out_byte_t));
+    if (nBytes >= zeroExtend (busBytes)) begin
+      case (toAXI4_Size (busBytes)) matches
+        tagged Valid .x: arsizeOut = x;
+        default : begin
+          vPrint (1, $format ("error: impossible arsize encountered"));
+          $finish;
+        end
+      endcase
+    end
+    let arflitOut = AXI4_ARFlit { arid: arflitIn.arid
+                                , araddr: arflitIn.araddr
+                                , arlen: arlenOut
+                                , arsize: arsizeOut
+                                , arburst: arflitIn.arburst
+                                , arlock: arflitIn.arlock
+                                , arcache: arflitIn.arcache
+                                , arprot: arflitIn.arprot
+                                , arqos: arflitIn.arqos
+                                , arregion: arflitIn.arregion
+                                , aruser: arflitIn.aruser };
+    arffOut.enq (arflitOut);
+    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, arflitOut "
+                       , fshow (arflitOut) ));
+    let addrffpayload = tuple4 ( nBytes
+                               , arflitIn.araddr
+                               , arflitIn.arsize
+                               , arflitIn.arlen );
+    addrff[arflitIn.arid].enq (addrffpayload);
+    vPrint (3, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, "
+                       , "addrffpayload[%0d] "
+                       , arflitIn.arid, fshow (addrffpayload) ));
   endrule
 
 
   // handle data flits
   Reg #(Bit #(nBytes_t)) cnt <- mkReg (0);
   let rflitOut = rffOut.first;
-  match {.nBytes, .addr, .arsize, .arlen} = addrff[rflitOut.rid].first;
-  rule w_accumulate_send;
+  let addrffpayload = addrff[rflitOut.rid].first;
+  match {.nBytes, .addr, .arsize, .arlen} = addrffpayload;
+  rule r_accumulate_send (addrff[rflitOut.rid].notEmpty);
+    vPrint (1, $format ("%m.mkAXI4ReadsNarrowToWide.r_accumulate_send"));
+    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
+                       , "rflitOut ", fshow (rflitOut) ));
+    vPrint (3, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
+                       , "addrffpayload[%0d] "
+                       , rflitOut.rid, fshow (addrffpayload) ));
 
-    Bit #(out_byte_idx_t) width = 1 << arsize;
+    Bit #(out_byte_idx_t) width = 1 << pack (arsize);
     Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
@@ -406,18 +486,22 @@ module mkAXI4ReadsNarrowToWide
     Bool isLast = newCnt == nBytes;
 
     // push a response
-    rffIn.enq (AXI4_RFlit { rid: rflitOut.rid
-                          , rdata: rspDataIn
-                          , rresp: rflitOut.rresp
-                          , rlast: isLast
-                          , ruser: rflitOut.ruser });
+    let rflitIn = AXI4_RFlit { rid: rflitOut.rid
+                             , rdata: rspDataIn
+                             , rresp: rflitOut.rresp
+                             , rlast: isLast
+                             , ruser: rflitOut.ruser };
+    rffIn.enq (rflitIn);
+    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
+                       , "rflitIn ", fshow (rflitIn) ));
 
-    // full flit consumed
-    Bit #(out_byte_idx_t) cntOffset = truncate (newCnt);
-    if (cntOffset == 0) rffOut.deq;
+    // will we consume from the returning r flits fifo?
+    Bool rffOutConsume = False;
 
     // finished the burst
     if (isLast) begin
+      vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
+                         , "last flit" ));
 
       // assertions
       // must build with the "-check-assert" flag to enable
@@ -425,7 +509,17 @@ module mkAXI4ReadsNarrowToWide
 
       addrff[rflitOut.rid].deq;
       newCnt = 0;
+      rffOutConsume = True;
 
+    end
+
+    // full flit consumed
+    Bit #(out_byte_idx_t) cntOffset = truncate (newCnt);
+    rffOutConsume = rffOutConsume || (cntOffset == 0);
+    if (rffOutConsume) begin
+      rffOut.deq;
+      vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
+                         , "full Out flit consumed" ));
     end
 
     // state update
