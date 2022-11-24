@@ -81,8 +81,9 @@ module mkAXI4DataWidthShim_WideToNarrow
   provisos ( NumAlias #(out_byte_t, TDiv #(data_Y, 8))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
            , Add #(_a, data_Y, data_X)
-           , Add #(_b, out_byte_idx_t, TransferBytesSz)
-           , Add #(_c, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, out_byte_idx_t)) );
+           , Add #(_b, out_byte_idx_t, MaxBytesSz)
+           , Add #(_c, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           );
   match {.aw_X, .w_X, .b_X, .aw_Y, .w_Y, .b_Y}
     <- mkAXI4WritesWideToNarrow (proxyBuffInDepth, proxyBuffOutDepth);
   match {.ar_X, .r_X, .ar_Y, .r_Y}
@@ -127,8 +128,9 @@ module mkAXI4DataWidthShim_NarrowToWide
            , Add #(_f, TLog#(TDiv#(data_Y, 8)), 16)
            , Add #(_g, TLog#(TDiv#(data_Y, 8)), addr_)
            , Add #(_h, TLog#(data_X), TLog#(data_Y))
-           , Add #(_i, out_byte_idx_t, TransferBytesSz)
-           , Add #(_j, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, out_byte_idx_t)) );
+           , Add #(_i, out_byte_idx_t, MaxBytesSz)
+           , Add #(_j, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           );
   match {.aw_X, .w_X, .b_X, .aw_Y, .w_Y, .b_Y}
     <- mkAXI4WritesNarrowToWide (proxyBuffInDepth, proxyBuffOutDepth);
   match {.ar_X, .r_X, .ar_Y, .r_Y}
@@ -164,7 +166,7 @@ endmodule
 typedef TAdd #( // AXI4 len width + 1 because of representation is -1
                 TAdd #(SizeOf #(AXI4_Len), 1)
                 // (2^(AXI4 size width))-1 maximum shift amount
-              , TSub #(TExp #(SizeOf #(AXI4_Size)), 1) ) TransferBytesSz;
+              , TSub #(TExp #(SizeOf #(AXI4_Size)), 1) ) MaxBytesSz;
 
 // check if a known static integer is a power of 2
 function Bool isPowerOf2 (Integer x);
@@ -175,7 +177,7 @@ endfunction
 
 // derive new AXI4 len and size (and total bytes accessed)
 typedef Tuple3 #(
-           Bit #(TransferBytesSz) // total number of bytes of the access
+           Bit #(MaxBytesSz) // total number of bytes of the access
          , AXI4_Len               // AXI4 len for the desired new bus width
          , AXI4_Size              // AXI4 size for the desired new bus width
          ) AccessParams;
@@ -185,9 +187,9 @@ function ActionValue #(AccessParams)
                      , AXI4_Size sizeIn // original AXI4 size
                      )
   provisos ( NumAlias #(busOffset_t, TLog #(newBusByteW))
-           , NumAlias #(flitIdx_t, TSub #(TransferBytesSz, busOffset_t))
-           , Add #(_a, busOffset_t, TransferBytesSz)
-           , Add #(_b, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, busOffset_t))
+           , NumAlias #(flitIdx_t, TSub #(MaxBytesSz, busOffset_t))
+           , Add #(_a, busOffset_t, MaxBytesSz)
+           , Add #(_b, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, busOffset_t))
            ) = actionvalue
 
   // assert that the bus width is a power of 2
@@ -198,7 +200,7 @@ function ActionValue #(AccessParams)
 
   // compute number of bytes in the access and derived values
   ///////////////////////////////////////////////////////////
-  Bit #(TransferBytesSz) nBytes = (zeroExtend (lenIn) + 1) << pack (sizeIn);
+  Bit #(MaxBytesSz) nBytes = (zeroExtend (lenIn) + 1) << pack (sizeIn);
   Bit #(busOffset_t) overflow = truncate (nBytes);
   Bit #(flitIdx_t) nFlits = truncateLSB (nBytes);
   if (nFlits == 0) begin
@@ -262,8 +264,8 @@ module mkAXI4WritesWideToNarrow
            , NumAlias #(out_bit_idx_t, TLog #(data_Y))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
            , Add #(_a, data_Y, data_X)
-           , Add #(_b, out_byte_idx_t, TransferBytesSz)
-           , Add #(_c, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, out_byte_idx_t))
+           , Add #(_b, out_byte_idx_t, MaxBytesSz)
+           , Add #(_c, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
            );
 
   // local declarations
@@ -482,14 +484,14 @@ module mkAXI4WritesNarrowToWide
            , Mul #(TDiv#(data_Y, 8), 8, data_Y)
            , Add #(_a, data_X, data_Y)
            , Add #(_b, TDiv#(data_X, 8), TDiv#(data_Y, 8))
-           , Add #(_c, out_byte_idx_t, TransferBytesSz)
+           , Add #(_c, out_byte_idx_t, MaxBytesSz)
            , Add #(_d, in_byte_idx_t, in_bit_idx_t)
            , Add #(_e, out_byte_idx_t, out_bit_idx_t)
            , Add #(_f, in_byte_idx_t, out_byte_idx_t)
            , Add #(_r, in_bit_idx_t, out_bit_idx_t)
            , Add #(_h, out_byte_idx_t, addr_)
-           , Add #(_i, out_byte_idx_t, TransferBytesSz)
-           , Add #(_j, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, out_byte_idx_t))
+           , Add #(_i, out_byte_idx_t, MaxBytesSz)
+           , Add #(_j, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
            );
 
   // local declarations
@@ -551,7 +553,7 @@ module mkAXI4WritesNarrowToWide
   // handle data channel
   //////////////////////////////////////////////////////////////////////////////
   //local state
-  Reg #(Bit #(TransferBytesSz)) cnt <- mkReg (0);
+  Reg #(Bit #(MaxBytesSz)) cnt <- mkReg (0);
   Reg #(Bit #(TDiv #(data_Y, 8))) strb <- mkReg (0);
   Reg #(Bit #(data_Y)) data <- mkRegU;
   rule w_accumulate_send;
@@ -572,7 +574,7 @@ module mkAXI4WritesNarrowToWide
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
     // accumulate the data and book-keep
-    Bit #(TransferBytesSz) newCnt = cnt + zeroExtend (width);
+    Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //tmpStrb[hiOut:loOut] = wflitIn.wstrb[hiIn:loIn];
     //tmpData[hiOutBit:loOutBit] = wflitIn.wdata[hiInBit:loInBit];
     Bit #(TDiv #(data_Y, 8)) msk = ~(~0 << width) << loOut;
@@ -660,19 +662,20 @@ module mkAXI4ReadsNarrowToWide
            , NumAlias #(out_byte_t, TDiv #(data_Y, 8))
            , NumAlias #(out_bit_idx_t, TLog #(data_Y))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , Alias #(local_info, Tuple4 #( Bit #(TransferBytesSz)
+           , Alias #(local_info, Tuple4 #( Bit #(MaxBytesSz)
                                          , Bit #(addr_)
                                          , AXI4_Size
                                          , AXI4_Len ))
            , Add #(_a, data_X, data_Y)
-           , Add #(_b, out_byte_idx_t, TransferBytesSz)
+           , Add #(_b, out_byte_idx_t, MaxBytesSz)
            , Add #(_c, in_byte_idx_t, in_bit_idx_t)
            , Add #(_d, out_byte_idx_t, out_bit_idx_t)
            , Add #(_e, in_byte_idx_t, out_byte_idx_t)
            , Add #(_f, in_bit_idx_t, out_bit_idx_t)
            , Add #(_g, out_byte_idx_t, addr_)
-           , Add #(_h, out_byte_idx_t, TransferBytesSz)
-           , Add #(_i, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, out_byte_idx_t)) );
+           , Add #(_h, out_byte_idx_t, MaxBytesSz)
+           , Add #(_i, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           );
 
   // local declarations
   //////////////////////////////////////////////////////////////////////////////
@@ -733,7 +736,7 @@ module mkAXI4ReadsNarrowToWide
 
   // handle data response channel
   //////////////////////////////////////////////////////////////////////////////
-  Reg #(Bit #(TransferBytesSz)) cnt <- mkReg (0);
+  Reg #(Bit #(MaxBytesSz)) cnt <- mkReg (0);
   let rflitOut = rffOut.first;
   let localffpayload = localff[rflitOut.rid].first;
   match {.nBytes, .addr, .arsize, .arlen} = localffpayload;
@@ -751,7 +754,7 @@ module mkAXI4ReadsNarrowToWide
     Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
-    Bit #(TransferBytesSz) newCnt = cnt + zeroExtend (width);
+    Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //rspData[hiInBit:loInBit] = rflitOut.rdata[hiOutBit:loOutBit];
     Bit #(data_Y) rspDataOut = rflitOut.rdata >> loOutBit;
     Bit #(data_X) rspDataIn = truncate (rspDataOut << loInBit);
