@@ -570,25 +570,34 @@ module mkAXI4ReadsNarrowToWide
            , Add #(_f, in_bit_idx_t, out_bit_idx_t)
            , Add #(_g, out_byte_idx_t, addr_) );
 
+  // local declarations
+  //////////////////////////////////////////////////////////////////////////////
+  // interfaces //
+  ////////////////
   // Request channel, single flit
   FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffIn <- mkFIFOF;
   FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffOut <- mkFIFOF;
-
   // Data response channel
   FIFOF #(AXI4_RFlit #(id_, data_X, ruser_))
     rffIn <- mkSizedFIFOF (valueOf (buffInDepth));
   FIFOF #(AXI4_RFlit #(id_, data_Y, ruser_))
     rffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
-
+  ////////////
+  // others //
+  ////////////
   // local state to remember addresses
-  Vector #(TExp #(id_), FIFOF #(local_info)) addrff <- replicateM (mkUGFIFOF);
+  Vector #(TExp #(id_), FIFOF #(local_info)) localff <- replicateM (mkUGFIFOF);
 
+  // handle address channel
+  //////////////////////////////////////////////////////////////////////////////
   let arflitIn = arffIn.first;
-  rule ar_send (addrff[arflitIn.arid].notFull);
+  rule ar_send (localff[arflitIn.arid].notFull);
     vPrint (1, $format ("%m.mkAXI4ReadsNarrowToWide.ar_send"));
+    // consume the incoming address request
     arffIn.deq;
-    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, arflitIn "
-                       , fshow (arflitIn) ));
+    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, "
+                       , "arflitIn ", fshow (arflitIn) ));
+    // derive the new outgoing address request
     Bit #(nBytes_t) nBytes =
       (zeroExtend (arflitIn.arlen) + 1) << pack (arflitIn.arsize);
     AXI4_Len arlenOut =
@@ -616,47 +625,47 @@ module mkAXI4ReadsNarrowToWide
                                 , arqos: arflitIn.arqos
                                 , arregion: arflitIn.arregion
                                 , aruser: arflitIn.aruser };
+    // send the outgoing address request
     arffOut.enq (arflitOut);
-    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, arflitOut "
-                       , fshow (arflitOut) ));
-    let addrffpayload = tuple4 ( nBytes
+    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, "
+                       , "arflitOut ", fshow (arflitOut) ));
+    // pass local information to the data channel handling rule
+    let localffpayload = tuple4 ( nBytes
                                , arflitIn.araddr
                                , arflitIn.arsize
                                , arflitIn.arlen );
-    addrff[arflitIn.arid].enq (addrffpayload);
+    localff[arflitIn.arid].enq (localffpayload);
     vPrint (3, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, "
-                       , "addrffpayload[%0d] "
-                       , arflitIn.arid, fshow (addrffpayload) ));
+                       , "localffpayload[%0d] "
+                       , arflitIn.arid, fshow (localffpayload) ));
   endrule
 
-
-  // handle data flits
+  // handle data response channel
+  //////////////////////////////////////////////////////////////////////////////
   Reg #(Bit #(nBytes_t)) cnt <- mkReg (0);
   let rflitOut = rffOut.first;
-  let addrffpayload = addrff[rflitOut.rid].first;
-  match {.nBytes, .addr, .arsize, .arlen} = addrffpayload;
-  rule r_accumulate_send (addrff[rflitOut.rid].notEmpty);
+  let localffpayload = localff[rflitOut.rid].first;
+  match {.nBytes, .addr, .arsize, .arlen} = localffpayload;
+  rule r_accumulate_send (localff[rflitOut.rid].notEmpty);
     vPrint (1, $format ("%m.mkAXI4ReadsNarrowToWide.r_accumulate_send"));
+    // read current local information
+    vPrint (3, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
+                       , "localffpayload[%0d] "
+                       , rflitOut.rid, fshow (localffpayload) ));
+    // read incoming data response flit
     vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
                        , "rflitOut ", fshow (rflitOut) ));
-    vPrint (3, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
-                       , "addrffpayload[%0d] "
-                       , rflitOut.rid, fshow (addrffpayload) ));
-
+    // accumulate the data and book-keep
     Bit #(out_byte_idx_t) width = 1 << pack (arsize);
     Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
-
-    // accumulate the data and book-keep
     Bit #(nBytes_t) newCnt = cnt + zeroExtend (width);
     //rspData[hiInBit:loInBit] = rflitOut.rdata[hiOutBit:loOutBit];
     Bit #(data_Y) rspDataOut = rflitOut.rdata >> loOutBit;
     Bit #(data_X) rspDataIn = truncate (rspDataOut << loInBit);
-
     // did we reach the last flit
     Bool isLast = newCnt == nBytes;
-
     // push a response
     let rflitIn = AXI4_RFlit { rid: rflitOut.rid
                              , rdata: rspDataIn
@@ -666,25 +675,19 @@ module mkAXI4ReadsNarrowToWide
     rffIn.enq (rflitIn);
     vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
                        , "rflitIn ", fshow (rflitIn) ));
-
     // will we consume from the returning r flits fifo?
     Bool rffOutConsume = False;
-
     // finished the burst
     if (isLast) begin
       vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
                          , "last flit" ));
-
       // assertions
       // must build with the "-check-assert" flag to enable
       dynamicAssert (rflitOut.rlast, "should line up with last r flit");
-
-      addrff[rflitOut.rid].deq;
+      localff[rflitOut.rid].deq;
       newCnt = 0;
       rffOutConsume = True;
-
     end
-
     // full flit consumed
     Bit #(out_byte_idx_t) cntOffset = truncate (newCnt);
     rffOutConsume = rffOutConsume || (cntOffset == 0);
@@ -693,12 +696,15 @@ module mkAXI4ReadsNarrowToWide
       vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
                          , "full Out flit consumed" ));
     end
-
     // state update
     cnt <= newCnt;
-
+    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "cnt (", fshow (cnt)
+                       , ") <= newCnt (", fshow (newCnt), ")" ));
   endrule
 
+  // return channels as interface
+  //////////////////////////////////////////////////////////////////////////////
   return tuple4 ( toSink (arffIn), toSource (rffIn)
                 , toSource (arffOut), toSink (rffOut) );
 
