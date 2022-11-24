@@ -489,21 +489,21 @@ module toWider_AXI4_Slave #(AXI4_Slave #( id_, addr_,  narrow_
   let in = shim.master;
 
   //Buffers for second halves of wide write flits (will be sent next)
-  let second_aw  <- mkSizedBypassFIFOF(1);
-  let second_w   <- mkSizedBypassFIFOF(1);
+  let second_aw  <- mkBypassFIFOF;
+  let second_w   <- mkBypassFIFOF;
 
   //Records whether responses should be dropped (i.e. first half of what was originally 1 xaction)
-  let drop_b     <- mkSizedBypassFIFOF(1);
+  let drop_b     <- mkBypassFIFOF;
 
   //Buffer for second half of ar request (will be sent next)
-  let second_ar  <- mkSizedBypassFIFOF(1);
+  let second_ar  <- mkBypassFIFOF;
 
   //Records whether read responses should be combined with another response, or represent an entire
   //xaction with the first or last bits to be zero-filled
-  let split_ar   <- mkSizedBypassFIFOF(1);
+  let split_ar   <- mkBypassFIFOF;
 
   //Buffers the first half of a read response (will be recombined next)
-  let first_r    <- mkSizedBypassFIFOF(1);
+  let first_r    <- mkBypassFIFOF;
 
 
   //Dynamic arbitration: alternate between reads and writes
