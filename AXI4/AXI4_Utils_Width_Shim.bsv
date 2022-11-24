@@ -298,28 +298,35 @@ module mkAXI4WritesNarrowToWide
            , Add #(_r, in_bit_idx_t, out_bit_idx_t)
            , Add #(_h, out_byte_idx_t, addr_) );
 
+  // local declarations
+  //////////////////////////////////////////////////////////////////////////////
+  // interfaces //
+  ////////////////
   // Address request channel, altered to account for burst size changes
   FIFOF #(AXI4_AWFlit #(id_, addr_, awuser_)) awffIn <- mkFIFOF;
   FIFOF #(AXI4_AWFlit #(id_, addr_, awuser_)) awffOut <- mkFIFOF;
-
   // Data request channel
   FIFOF #(AXI4_WFlit #(data_X, wuser_))
     wffIn <- mkSizedFIFOF (valueOf (buffInDepth));
   FIFOF #(AXI4_WFlit #(data_Y, wuser_))
     wffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
-
   // Response channel, single flit, passed straight through
   let bff <- mkFIFOF;
-
+  ////////////
+  // others //
+  ////////////
   // local communication
   let reqff <- mkBypassFIFOF;
 
-  // handle address flits
+  // handle address channel
+  //////////////////////////////////////////////////////////////////////////////
   rule aw_send;
     vPrint (1, $format ("%m.mkAXI4WritesNarrowToWide.aw_send"));
+    // read and consume the incoming address request
     AXI4_AWFlit #(id_, addr_, awuser_) awflitIn <- get (awffIn);
     vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.aw_send, "
                        , "awflitIn ", fshow (awflitIn) ));
+    // derive the new outgoing address request
     Bit #(nBytes_t) nBytes =
       (zeroExtend (awflitIn.awlen) + 1) << pack (awflitIn.awsize);
     AXI4_Len awlenOut =
@@ -347,9 +354,11 @@ module mkAXI4WritesNarrowToWide
                                 , awqos: awflitIn.awqos
                                 , awregion: awflitIn.awregion
                                 , awuser: awflitIn.awuser };
+    // send the outgoing address request
     awffOut.enq (awflitOut);
     vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.aw_send, "
                        , "awflitOut ", fshow (awflitOut) ));
+    // pass local information to the data channel handling rule
     let reqffpayload = tuple6 ( nBytes, awflitIn.awaddr
                               , awflitIn.awsize, awflitIn.awlen
                               , awsizeOut, awlenOut );
@@ -358,26 +367,29 @@ module mkAXI4WritesNarrowToWide
                        , "reqffpayload ", fshow (reqffpayload) ));
   endrule
 
-  // handle data flits
+  // handle data channel
+  //////////////////////////////////////////////////////////////////////////////
+  //local state
   Reg #(Bit #(nBytes_t)) cnt <- mkReg (0);
   Reg #(Bit #(TDiv #(data_Y, 8))) strb <- mkReg (0);
   Reg #(Bit #(data_Y)) data <- mkRegU;
   rule w_accumulate_send;
     vPrint (1, $format ("%m.mkAXI4WritesNarrowToWide.w_accumulate_send"));
+    // read current local information
     vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
                        , "reqff.first ", fshow (reqff.first) ));
     match {.nBytes, .addr, .awsizeIn, .awlenIn, .awsizeOut, .awlenOut} =
       reqff.first;
+    // consume incoming data flit
     let wflitIn <- get (wffIn);
     vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
                        , "wflitIn ", fshow (wflitIn) ));
-
+    // derive the relevant data indices
     Bit #(out_byte_idx_t) width = 1 << pack (awsizeIn);
     Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(in_byte_idx_t) loIn = truncate (loOut);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
-
     // accumulate the data and book-keep
     Bit #(nBytes_t) newCnt = cnt + zeroExtend (width);
     //tmpStrb[hiOut:loOut] = wflitIn.wstrb[hiIn:loIn];
@@ -389,16 +401,18 @@ module mkAXI4WritesNarrowToWide
     Bit #(data_X) tmpDataIn = wflitIn.wdata >> loInBit;
     Bit #(data_Y) tmpDataOut = zeroExtend (tmpDataIn) << loOutBit;
     Bit #(data_Y) newData = mergeWithBE (msk, data, tmpDataOut);
-
     // did we reach the last flit
     Bool isLast = newCnt == nBytes;
     vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
                        , "newCnt ", fshow (newCnt) ));
     vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
                        , "nBytes ", fshow (nBytes) ));
-
+    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "isLast ", fshow (isLast) ));
     // full flit ready
     Bit #(out_byte_idx_t) cntOffset = truncate (newCnt);
+    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+                       , "cntOffset ", fshow (cntOffset) ));
     if (isLast || cntOffset == 0) begin
       let wflitOut =  AXI4_WFlit { wdata: newData
                                  , wstrb: newStrb
@@ -412,40 +426,34 @@ module mkAXI4WritesNarrowToWide
       newData = 0;
       newStrb = 0;
     end
-
     // finished the burst
     if (isLast) begin
       vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
                          , "burst finished"));
-
       // assertions
       // must build with the "-check-assert" flag to enable
       dynamicAssert (wflitIn.wlast, "should line up with last w flit");
-
+      // consume local information
       reqff.deq;
       newCnt = 0;
-
     end
-
-    // state update
+    // accumulate state
     cnt <= newCnt;
     data <= newData;
     strb <= newStrb;
     vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "cnt ", fshow (cnt) ));
+                       , "cnt (", fshow (cnt)
+                       , ") <= newCnt (", fshow (newCnt), ")" ));
     vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "newCnt ", fshow (newCnt) ));
+                       , "data (", fshow (data)
+                       , ") <= newData (", fshow (newData), ")" ));
     vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "data ", fshow (data) ));
-    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "newData ", fshow (newData) ));
-    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "strb ", fshow (strb) ));
-    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "newStrb ", fshow (newStrb) ));
-
+                       , "strb (", fshow (strb)
+                       , ") <= newStrb (", fshow (newStrb), ")" ));
   endrule
 
+  // return channels as interface
+  //////////////////////////////////////////////////////////////////////////////
   return tuple6 ( toSink (awffIn), toSink (wffIn), toSource (bff)
                 , toSource (awffOut), toSource(wffOut), toSink (bff) );
 
