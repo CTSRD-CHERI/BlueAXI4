@@ -82,7 +82,7 @@ module mkAXI4DataWidthShim_WideToNarrow
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
            , Add #(_a, data_Y, data_X)
            , Add #(_b, out_byte_idx_t, TransferBytesSz)
-           , Add #(_c, out_byte_idx_t, TAdd #(SizeOf #(AXI4_Len), 1)) );
+           , Add #(_c, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, out_byte_idx_t)) );
   match {.aw_X, .w_X, .b_X, .aw_Y, .w_Y, .b_Y}
     <- mkAXI4WritesWideToNarrow (proxyBuffInDepth, proxyBuffOutDepth);
   match {.ar_X, .r_X, .ar_Y, .r_Y}
@@ -128,7 +128,7 @@ module mkAXI4DataWidthShim_NarrowToWide
            , Add #(_g, TLog#(TDiv#(data_Y, 8)), addr_)
            , Add #(_h, TLog#(data_X), TLog#(data_Y))
            , Add #(_i, out_byte_idx_t, TransferBytesSz)
-           , Add #(_j, out_byte_idx_t, TAdd #(SizeOf #(AXI4_Len), 1)) );
+           , Add #(_j, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, out_byte_idx_t)) );
   match {.aw_X, .w_X, .b_X, .aw_Y, .w_Y, .b_Y}
     <- mkAXI4WritesNarrowToWide (proxyBuffInDepth, proxyBuffOutDepth);
   match {.ar_X, .r_X, .ar_Y, .r_Y}
@@ -187,7 +187,7 @@ function ActionValue #(AccessParams)
   provisos ( NumAlias #(busOffset_t, TLog #(newBusByteW))
            , NumAlias #(flitIdx_t, TSub #(TransferBytesSz, busOffset_t))
            , Add #(_a, busOffset_t, TransferBytesSz)
-           , Add #(_b, busOffset_t, TAdd #(SizeOf #(AXI4_Len), 1))
+           , Add #(_b, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, busOffset_t))
            ) = actionvalue
 
   // assert that the bus width is a power of 2
@@ -196,23 +196,24 @@ function ActionValue #(AccessParams)
     $finish;
   end
 
-  // compute number of bytes in the access
-  ////////////////////////////////////////
+  // compute number of bytes in the access and derived values
+  ///////////////////////////////////////////////////////////
   Bit #(TransferBytesSz) nBytes = (zeroExtend (lenIn) + 1) << pack (sizeIn);
+  Bit #(busOffset_t) overflow = truncate (nBytes);
+  Bit #(flitIdx_t) nFlits = truncateLSB (nBytes);
+  if (nFlits == 0) begin
+      $display ("error: encountered AXI4 transfer with 0 flits");
+      $finish;
+  end
 
   // compute the target access length and check that it is less the maximum
   // AXI4 len of 256
   /////////////////////////////////////////////////////////////////////////
-  Bit #(busOffset_t) overflow = truncate (nBytes);
-  Bit #(flitIdx_t) nFlits = truncateLSB (nBytes);
-  Bit #(TAdd #(flitIdx_t, 1)) tgtLen = zeroExtend (nFlits);
-  if (overflow != 0) tgtLen = tgtLen + 1;
-  if (tgtLen > 256) begin
+  if (overflow == 0 && nFlits > 256) begin
       $display ("error: too long AXI4 transfer (>256 flits) encountered");
       $finish;
   end
-  AXI4_Len lenOut = truncate (tgtLen - 1);
-  if (tgtLen == 0) lenOut = 0;
+  AXI4_Len lenOut = truncate (nFlits - 1);
 
   // compute the target access size and check that it is less the maximum
   // AXI4 len of 128 bytes (3'b111)
@@ -226,6 +227,14 @@ function ActionValue #(AccessParams)
         $finish;
       end
     endcase
+
+  // if there was an overflow, fall back to original access prameters
+  // (this can only happen when going from a narrow to a wide bus)
+  ///////////////////////////////////////////////////////////////////
+  if (overflow != 0) begin
+    lenOut = lenIn;
+    sizeOut = sizeIn;
+  end
 
   // return results
   /////////////////
@@ -254,7 +263,7 @@ module mkAXI4WritesWideToNarrow
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
            , Add #(_a, data_Y, data_X)
            , Add #(_b, out_byte_idx_t, TransferBytesSz)
-           , Add #(_c, out_byte_idx_t, TAdd #(SizeOf #(AXI4_Len), 1))
+           , Add #(_c, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, out_byte_idx_t))
            );
 
   // local declarations
@@ -480,7 +489,7 @@ module mkAXI4WritesNarrowToWide
            , Add #(_r, in_bit_idx_t, out_bit_idx_t)
            , Add #(_h, out_byte_idx_t, addr_)
            , Add #(_i, out_byte_idx_t, TransferBytesSz)
-           , Add #(_j, out_byte_idx_t, TAdd #(SizeOf #(AXI4_Len), 1))
+           , Add #(_j, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, out_byte_idx_t))
            );
 
   // local declarations
@@ -663,7 +672,7 @@ module mkAXI4ReadsNarrowToWide
            , Add #(_f, in_bit_idx_t, out_bit_idx_t)
            , Add #(_g, out_byte_idx_t, addr_)
            , Add #(_h, out_byte_idx_t, TransferBytesSz)
-           , Add #(_i, out_byte_idx_t, TAdd #(SizeOf #(AXI4_Len), 1)) );
+           , Add #(_i, SizeOf #(AXI4_Len), TSub #(TransferBytesSz, out_byte_idx_t)) );
 
   // local declarations
   //////////////////////////////////////////////////////////////////////////////
