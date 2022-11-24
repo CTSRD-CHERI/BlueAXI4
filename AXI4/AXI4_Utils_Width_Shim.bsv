@@ -260,8 +260,85 @@ module mkAXI4ReadsWideToNarrow
            , Source #(AXI4_ARFlit #(id_, addr_, aruser_))
            , Sink #(AXI4_RFlit #(id_, data_Y, ruser_)) ))
   provisos (Add #(_, data_Y, data_X));
-  let ifcs = error ("TODO");
-  return ifcs;
+
+  // local declarations
+  //////////////////////////////////////////////////////////////////////////////
+  // interfaces //
+  ////////////////
+  // Request channel, single flit
+  FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffIn <- mkFIFOF;
+  FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffOut <- mkFIFOF;
+  // Data response channel
+  FIFOF #(AXI4_RFlit #(id_, data_X, ruser_))
+    rffIn <- mkSizedFIFOF (valueOf (buffInDepth));
+  FIFOF #(AXI4_RFlit #(id_, data_Y, ruser_))
+    rffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
+  ////////////
+  // others //
+  ////////////
+  // local state to remember addresses
+  Vector #(TExp #(id_), FIFOF #(Bit #(0))) localff <- replicateM (mkUGFIFOF);
+
+  // handle address channel
+  //////////////////////////////////////////////////////////////////////////////
+  let arflitIn = arffIn.first;
+  rule ar_send (localff[arflitIn.arid].notFull);
+    vPrint (1, $format ("%m.mkAXI4ReadsWideToNarrow.ar_send"));
+    // consume the incoming address request
+    arffIn.deq;
+    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
+                       , "arflitIn ", fshow (arflitIn) ));
+    // derive the new outgoing address request
+    AXI4_ARFlit #(id_, addr_, aruser_) arflitOut = error ("TODO");
+    // send the outgoing address request
+    arffOut.enq (arflitOut);
+    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
+                       , "arflitOut ", fshow (arflitOut) ));
+    // pass local information to the data channel handling rule
+    Bit #(0) localpayload = error ("TODO");
+    localff[arflitIn.arid].enq (localpayload);
+    vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
+                       , "localpayload ", fshow (localpayload) ));
+  endrule
+
+  // handle data response channel
+  //////////////////////////////////////////////////////////////////////////////
+  let rflitOut = rffOut.first;
+  rule r_accumulate_send (localff[rflitOut.rid].notEmpty);
+    vPrint (1, $format ("%m.mkAXI4ReadsWideToNarrow.r_accumulate_send"));
+    // read current local information
+    vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
+                       , "localff[rflitOut.rid].first "
+                       , fshow (localff[rflitOut.rid].first) ));
+    //match {.addr, .nBytes} = localff[rflitOut.rid].first;
+    // read and consume incoming data response flit
+    rffOut.deq;
+    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
+                       , "rflitOut ", fshow (rflitOut) ));
+    // accumulate the data and book-keep
+    //let newData = data;
+    //let newByteCnt = byteCnt;
+    // when the burst is finished, consume local information
+    let burstFinished = error ("TODO");
+    if (burstFinished) begin
+      localff[rflitOut.rid].deq;
+      vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
+                         , "consume localff[rflitOut.rid]" ));
+    end
+    // when a whole flit is ready, send it over
+    let flitReady = error ("TODO");
+    if (burstFinished || flitReady) begin
+      AXI4_RFlit #(id_, data_X, ruser_) rflitIn = error ("TODO");
+      rffIn.enq (rflitIn);
+      vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
+                         , "rflitIn ", fshow (rflitIn) ));
+    end
+  endrule
+
+  // return channels as interface
+  //////////////////////////////////////////////////////////////////////////////
+  return tuple4 ( toSink (arffIn), toSource (rffIn)
+                , toSource (arffOut), toSink (rffOut) );
 endmodule
 
 // Convert narrow writes to wide writes
@@ -504,11 +581,12 @@ module mkAXI4ReadsNarrowToWide
     rffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
 
   // local state to remember addresses
-  Vector #(TExp #(id_), FIFOF #(local_info)) addrff <- replicateM (mkFIFOF);
+  Vector #(TExp #(id_), FIFOF #(local_info)) addrff <- replicateM (mkUGFIFOF);
 
-  rule ar_send;
+  let arflitIn = arffIn.first;
+  rule ar_send (addrff[arflitIn.arid].notFull);
     vPrint (1, $format ("%m.mkAXI4ReadsNarrowToWide.ar_send"));
-    let arflitIn <- get (arffIn);
+    arffIn.deq;
     vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, arflitIn "
                        , fshow (arflitIn) ));
     Bit #(nBytes_t) nBytes =
