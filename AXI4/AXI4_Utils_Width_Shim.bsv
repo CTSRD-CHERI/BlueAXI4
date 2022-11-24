@@ -48,6 +48,11 @@ import BlueBasics :: *;
 import AXI4_Types :: *;
 import AXI4_Common_Types :: *;
 
+// exported utilities
+
+export mkAXI4DataWidthShim_WideToNarrow;
+export mkAXI4DataWidthShim_NarrowToWide;
+
 // debug helpers
 
 Integer verbosity_level = 0;
@@ -157,8 +162,89 @@ module mkAXI4WritesWideToNarrow
            , Source #(AXI4_WFlit #(data_Y, wuser_))
            , Sink #(AXI4_BFlit #(id_, buser_)) ))
   provisos (Add #(_, data_Y, data_X));
-  let ifcs = error ("TODO");
-  return ifcs;
+
+  // local declarations
+  //////////////////////////////////////////////////////////////////////////////
+  // interfaces //
+  ////////////////
+  // Address request channel, altered to account for burst size changes
+  FIFOF #(AXI4_AWFlit #(id_, addr_, awuser_)) awffIn <- mkFIFOF;
+  FIFOF #(AXI4_AWFlit #(id_, addr_, awuser_)) awffOut <- mkFIFOF;
+  // Data request channel
+  FIFOF #(AXI4_WFlit #(data_X, wuser_))
+    wffIn <- mkSizedFIFOF (valueOf (buffInDepth));
+  FIFOF #(AXI4_WFlit #(data_Y, wuser_))
+    wffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
+  // Response channel, single flit, passed straight through
+  let bff <- mkFIFOF;
+  ////////////
+  // others //
+  ////////////
+  // local communication
+  //TODO let reqff <- mkBypassFIFOF;
+  FIFOF #(Bit #(0)) reqff <- mkBypassFIFOF;
+
+  // handle address channel
+  //////////////////////////////////////////////////////////////////////////////
+  rule aw_send;
+    vPrint (1, $format ("%m.mkAXI4WritesWideToNarrow.aw_send"));
+    // read and consume the incoming address request
+    let awflitIn <- get (awffIn);
+    vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.aw_send, "
+                       , "awflitIn ", fshow (awflitIn) ));
+    // derive the new outgoing address request
+    AXI4_AWFlit #(id_, addr_, awuser_) awflitOut = error ("TODO");
+    // send the outgoing address request
+    awffOut.enq (awflitOut);
+    vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.aw_send, "
+                       , "awflitOut ", fshow (awflitOut) ));
+    // pass local information to the data channel handling rule
+    Bit #(0) reqffpayload = error ("TODO");
+    reqff.enq (reqffpayload);
+    vPrint (3, $format ( "%m.mkAXI4WritesWideToNarrow.aw_send, "
+                       , "reqffpayload ", fshow (reqffpayload) ));
+  endrule
+
+  // handle data channel
+  //////////////////////////////////////////////////////////////////////////////
+  rule w_send;
+    vPrint (1, $format ("%m.mkAXI4WritesWideToNarrow.w_send"));
+    // read current local information
+    let reqffpayload = reqff.first;
+    vPrint (3, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
+                       , "reqffpayload ", fshow (reqffpayload) ));
+    // read current incoming data flit
+    let wflitIn = wffIn.first;
+    vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
+                       , "wflitIn ", fshow (wflitIn) ));
+    // derive the new outgoing data flit
+    AXI4_WFlit #(data_Y, wuser_) wflitOut = error ("TODO");
+    // send the outgoing data flit
+    wffOut.enq (wflitOut);
+    vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
+                       , "wflitOut ", fshow (wflitOut) ));
+    // when the whole request is handled, consume local information
+    let requestHandled = error ("TODO");
+    if (requestHandled) begin
+      reqff.deq;
+      vPrint (3, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
+                         , "whole request handled" ));
+    end
+    // when the incoming flit is fully utilized (and on end of request),
+    // consume it
+    let flitUtilized = error ("TODO");
+    if (requestHandled || flitUtilized) begin
+      wffIn.deq;
+      vPrint (3, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
+                         , "wflitIn fully utilized, consuming it" ));
+    end
+  endrule
+
+  // return channels as interface
+  //////////////////////////////////////////////////////////////////////////////
+  return tuple6 ( toSink (awffIn), toSink (wffIn), toSource (bff)
+                , toSource (awffOut), toSource(wffOut), toSink (bff) );
+
 endmodule
 
 // Convert wide reads to narrow reads
@@ -181,7 +267,7 @@ endmodule
 // Convert narrow writes to wide writes
 ////////////////////////////////////////////////////////////////////////////////
 
-// XXX TODO: support awburst == INCR
+// XXX TODO: currently supports awburst == INCR
 //           undefined behaviour for WRAP and FIXED (in practice same as INCR)
 
 module mkAXI4WritesNarrowToWide
@@ -368,7 +454,7 @@ endmodule
 // Convert narrow reads to wide reads
 ////////////////////////////////////////////////////////////////////////////////
 
-// XXX TODO: support arburst == INCR
+// XXX TODO: currently supports awburst == INCR
 //           undefined behaviour for WRAP and FIXED (in practice same as INCR)
 
 module mkAXI4ReadsNarrowToWide
