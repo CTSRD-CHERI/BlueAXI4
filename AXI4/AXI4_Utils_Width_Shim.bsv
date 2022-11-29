@@ -203,7 +203,7 @@ function ActionValue #(AccessParams)
   Bit #(MaxBytesSz) nBytes = (zeroExtend (lenIn) + 1) << pack (sizeIn);
   Bit #(busOffset_t) overflow = truncate (nBytes);
   Bit #(flitIdx_t) nFlits = truncateLSB (nBytes);
-  if (nFlits == 0) begin
+  if (overflow == 0 && nFlits == 0) begin
       $display ("error: encountered AXI4 transfer with 0 flits");
       $finish;
   end
