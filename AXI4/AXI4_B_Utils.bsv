@@ -212,22 +212,14 @@ endmodule
 // probe B flit
 ////////////////////////////////////////////////////////////////////////////////
 
-module probeAXI4_BFlit #( Bool bvalid
-                        , Bool bready
-                        , AXI4_BFlit #(id_, user_) bflit) (Empty);
-  let bid_prb <- mkProbe;
-  let bresp_prb <- mkProbe;
-  let buser_prb <- mkProbe;
-  let bvalid_prb <- mkProbe;
-  let bready_prb <- mkProbe;
-  (* fire_when_enabled, no_implicit_conditions *)
-  rule probe_signals;
-    bid_prb <= bflit.bid;
-    bresp_prb <= bflit.bresp;
-    buser_prb <= bflit.buser;
-    bvalid_prb <= bvalid;
-    bready_prb <= bready;
-  endrule
+module probeAXI4_BFlit #( Bool b_valid
+                        , Bool b_ready
+                        , AXI4_BFlit #(id_, user_) b_flit) (Empty);
+  let bid <- mkSignalProbe (b_flit.bid);
+  let bresp <- mkSignalProbe (b_flit.bresp);
+  let buser <- mkSignalProbe (b_flit.buser);
+  let bvalid <- mkSignalProbe (b_valid);
+  let bready <- mkSignalProbe (b_ready);
 endmodule
 
 // probe Master interface

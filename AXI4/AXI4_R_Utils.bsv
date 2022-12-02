@@ -253,26 +253,16 @@ endmodule
 // probe R flit
 ////////////////////////////////////////////////////////////////////////////////
 
-module probeAXI4_RFlit #( Bool rvalid
-                        , Bool rready
-                        , AXI4_RFlit #(id_, data_, user_) rflit) (Empty);
-  let rid_prb <- mkProbe;
-  let rdata_prb <- mkProbe;
-  let rresp_prb <- mkProbe;
-  let rlast_prb <- mkProbe;
-  let ruser_prb <- mkProbe;
-  let rvalid_prb <- mkProbe;
-  let rready_prb <- mkProbe;
-  (* fire_when_enabled, no_implicit_conditions *)
-  rule probe_signals;
-    rid_prb <= rflit.rid;
-    rdata_prb <= rflit.rdata;
-    rresp_prb <= rflit.rresp;
-    rlast_prb <= rflit.rlast;
-    ruser_prb <= rflit.ruser;
-    rvalid_prb <= rvalid;
-    rready_prb <= rready;
-  endrule
+module probeAXI4_RFlit #( Bool r_valid
+                        , Bool r_ready
+                        , AXI4_RFlit #(id_, data_, user_) r_flit) (Empty);
+  let rid <- mkSignalProbe (r_flit.rid);
+  let rdata <- mkSignalProbe (r_flit.rdata);
+  let rresp <- mkSignalProbe (r_flit.rresp);
+  let rlast <- mkSignalProbe (r_flit.rlast);
+  let ruser <- mkSignalProbe (r_flit.ruser);
+  let rvalid <- mkSignalProbe (r_valid);
+  let rready <- mkSignalProbe (r_ready);
 endmodule
 
 // probe Master interface

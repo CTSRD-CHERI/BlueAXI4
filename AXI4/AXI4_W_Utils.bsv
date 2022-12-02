@@ -227,24 +227,15 @@ endmodule
 // probe W flit
 ////////////////////////////////////////////////////////////////////////////////
 
-module probeAXI4_WFlit #( Bool wvalid
-                        , Bool wready
-                        , AXI4_WFlit #(data_, user_) wflit) (Empty);
-  let wdata_prb <- mkProbe;
-  let wstrb_prb <- mkProbe;
-  let wlast_prb <- mkProbe;
-  let wuser_prb <- mkProbe;
-  let wvalid_prb <- mkProbe;
-  let wready_prb <- mkProbe;
-  (* fire_when_enabled, no_implicit_conditions *)
-  rule probe_signals;
-    wdata_prb <= wflit.wdata;
-    wstrb_prb <= wflit.wstrb;
-    wlast_prb <= wflit.wlast;
-    wuser_prb <= wflit.wuser;
-    wvalid_prb <= wvalid;
-    wready_prb <= wready;
-  endrule
+module probeAXI4_WFlit #( Bool w_valid
+                        , Bool w_ready
+                        , AXI4_WFlit #(data_, user_) w_flit) (Empty);
+  let wdata <- mkSignalProbe (w_flit.wdata);
+  let wstrb <- mkSignalProbe (w_flit.wstrb);
+  let wlast <- mkSignalProbe (w_flit.wlast);
+  let wuser <- mkSignalProbe (w_flit.wuser);
+  let wvalid <- mkSignalProbe (w_valid);
+  let wready <- mkSignalProbe (w_ready);
 endmodule
 
 // probe Master interface

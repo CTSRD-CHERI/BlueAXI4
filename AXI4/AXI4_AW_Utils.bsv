@@ -354,38 +354,22 @@ endmodule
 // probe AW flit
 ////////////////////////////////////////////////////////////////////////////////
 
-module probeAXI4_AWFlit #( Bool awvalid
-                         , Bool awready
-                         , AXI4_AWFlit #(id_, addr_, user_) awflit) (Empty);
-  let awid_prb <- mkProbe;
-  let awaddr_prb <- mkProbe;
-  let awlen_prb <- mkProbe;
-  let awsize_prb <- mkProbe;
-  let awburst_prb <- mkProbe;
-  let awlock_prb <- mkProbe;
-  let awcache_prb <- mkProbe;
-  let awprot_prb <- mkProbe;
-  let awqos_prb <- mkProbe;
-  let awregion_prb <- mkProbe;
-  let awuser_prb <- mkProbe;
-  let awvalid_prb <- mkProbe;
-  let awready_prb <- mkProbe;
-  (* fire_when_enabled, no_implicit_conditions *)
-  rule probe_signals;
-    awid_prb <= awflit.awid;
-    awaddr_prb <= awflit.awaddr;
-    awlen_prb <= awflit.awlen;
-    awsize_prb <= awflit.awsize;
-    awburst_prb <= awflit.awburst;
-    awlock_prb <= awflit.awlock;
-    awcache_prb <= awflit.awcache;
-    awprot_prb <= awflit.awprot;
-    awqos_prb <= awflit.awqos;
-    awregion_prb <= awflit.awregion;
-    awuser_prb <= awflit.awuser;
-    awvalid_prb <= awvalid;
-    awready_prb <= awready;
-  endrule
+module probeAXI4_AWFlit #( Bool aw_valid
+                         , Bool aw_ready
+                         , AXI4_AWFlit #(id_, addr_, user_) aw_flit) (Empty);
+  let awid <- mkSignalProbe (aw_flit.awid);
+  let awaddr <- mkSignalProbe (aw_flit.awaddr);
+  let awlen <- mkSignalProbe (aw_flit.awlen);
+  let awsize <- mkSignalProbe (aw_flit.awsize);
+  let awburst <- mkSignalProbe (aw_flit.awburst);
+  let awlock <- mkSignalProbe (aw_flit.awlock);
+  let awcache <- mkSignalProbe (aw_flit.awcache);
+  let awprot <- mkSignalProbe (aw_flit.awprot);
+  let awqos <- mkSignalProbe (aw_flit.awqos);
+  let awregion <- mkSignalProbe (aw_flit.awregion);
+  let awuser <- mkSignalProbe (aw_flit.awuser);
+  let awvalid <- mkSignalProbe (aw_valid);
+  let awready <- mkSignalProbe (aw_ready);
 endmodule
 
 // probe Master interface

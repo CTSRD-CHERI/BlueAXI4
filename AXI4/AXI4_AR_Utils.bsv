@@ -30,7 +30,6 @@ import BlueBasics :: *;
 
 import AXI4_Types :: *;
 
-import Probe :: *;
 import FIFOF :: *;
 import SpecialFIFOs :: *;
 
@@ -354,38 +353,22 @@ endmodule
 // probe AR flit
 ////////////////////////////////////////////////////////////////////////////////
 
-module probeAXI4_ARFlit #( Bool arvalid
-                         , Bool arready
-                         , AXI4_ARFlit #(id_, addr_, user_) arflit) (Empty);
-  let arid_prb <- mkProbe;
-  let araddr_prb <- mkProbe;
-  let arlen_prb <- mkProbe;
-  let arsize_prb <- mkProbe;
-  let arburst_prb <- mkProbe;
-  let arlock_prb <- mkProbe;
-  let arcache_prb <- mkProbe;
-  let arprot_prb <- mkProbe;
-  let arqos_prb <- mkProbe;
-  let arregion_prb <- mkProbe;
-  let aruser_prb <- mkProbe;
-  let arvalid_prb <- mkProbe;
-  let arready_prb <- mkProbe;
-  (* fire_when_enabled, no_implicit_conditions *)
-  rule probe_signals;
-    arid_prb <= arflit.arid;
-    araddr_prb <= arflit.araddr;
-    arlen_prb <= arflit.arlen;
-    arsize_prb <= arflit.arsize;
-    arburst_prb <= arflit.arburst;
-    arlock_prb <= arflit.arlock;
-    arcache_prb <= arflit.arcache;
-    arprot_prb <= arflit.arprot;
-    arqos_prb <= arflit.arqos;
-    arregion_prb <= arflit.arregion;
-    aruser_prb <= arflit.aruser;
-    arvalid_prb <= arvalid;
-    arready_prb <= arready;
-  endrule
+module probeAXI4_ARFlit #( Bool ar_valid
+                         , Bool ar_ready
+                         , AXI4_ARFlit #(id_, addr_, user_) ar_flit) (Empty);
+  let arid <- mkSignalProbe (ar_flit.arid);
+  let araddr <- mkSignalProbe (ar_flit.araddr);
+  let arlen <- mkSignalProbe (ar_flit.arlen);
+  let arsize <- mkSignalProbe (ar_flit.arsize);
+  let arburst <- mkSignalProbe (ar_flit.arburst);
+  let arlock <- mkSignalProbe (ar_flit.arlock);
+  let arcache <- mkSignalProbe (ar_flit.arcache);
+  let arprot <- mkSignalProbe (ar_flit.arprot);
+  let arqos <- mkSignalProbe (ar_flit.arqos);
+  let arregion <- mkSignalProbe (ar_flit.arregion);
+  let aruser <- mkSignalProbe (ar_flit.aruser);
+  let arvalid <- mkSignalProbe (ar_valid);
+  let arready <- mkSignalProbe (ar_ready);
 endmodule
 
 // probe Master interface
