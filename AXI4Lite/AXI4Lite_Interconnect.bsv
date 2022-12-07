@@ -111,9 +111,14 @@ module mkAXI4LiteBus #(
     endinterface;
   end
 
-  // connect with standard busses
-  mkInOrderTwoWayBus (route, write_masters, write_slaves);
-  mkInOrderTwoWayBus (route, read_masters,  read_slaves);
+  // connect with TwoWay buses
+  let wrapMaster = composeMWithInteger ( wrapMaster_SingleReq
+                                       , wrapMaster_WithIndex );
+  let wrapSlave = wrapSlave_HandleRouteBack;
+  mkTwoWayBusNoRoute
+    (route, indexToOneHot, wrapMaster, wrapSlave, write_masters, write_slaves);
+  mkTwoWayBusNoRoute
+    (route, indexToOneHot, wrapMaster, wrapSlave, read_masters, read_slaves);
 
 endmodule
 
