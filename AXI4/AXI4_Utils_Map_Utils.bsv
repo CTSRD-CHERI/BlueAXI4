@@ -179,6 +179,13 @@ function AXI4_Slave #(a, addr_in, c, d, e, f, g, h)
   return mapAXI4_Slave_addr (f, s);
 endfunction
 
+function AXI4_Slave #(a, addr, c, d, e, f, g, h)
+  or_AXI4_Slave_addr ( Bit #(addr) orBits
+                     , AXI4_Slave #(a, addr, c, d, e, f, g, h) s);
+  function f (x) = x | orBits;
+  return mapAXI4_Slave_addr (f, s);
+endfunction
+
 function AXI4_Slave #(a, b, c, d, e, f, g, h)
   mask_AXI4_Slave_addr ( Bit #(b) mask
                        , AXI4_Slave #(a, b, c, d, e, f, g, h) s);
