@@ -74,15 +74,28 @@ module mkAXI4DataWidthShim_WideToNarrow
   #( parameter NumProxy #(buffInDepth)  proxyBuffInDepth
    , parameter NumProxy #(buffOutDepth) proxyBuffOutDepth )
   // returned interface
-  (Tuple2 #( AXI4_Slave  #( id_, addr_, data_X
+  (Tuple2 #( AXI4_Slave  #( id_, addr_, in_bit_t
                           , awuser_, wuser_, buser_, aruser_, ruser_ )
-           , AXI4_Master #( id_, addr_, data_Y
+           , AXI4_Master #( id_, addr_, out_bit_t
                           , awuser_, wuser_, buser_, aruser_, ruser_ )))
-  provisos ( NumAlias #(out_byte_t, TDiv #(data_Y, 8))
+  provisos ( NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
+           , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , Add #(_a, data_Y, data_X)
-           , Add #(_b, out_byte_idx_t, MaxBytesSz)
-           , Add #(_c, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           , NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
+           , NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
+           , NumAlias #(in_byte_idx_t, TLog #(in_byte_t))
+           , Mul #(in_byte_t, 8, in_bit_t)
+           , Add #(_a, out_bit_t, in_bit_t)
+           , Add #(_b, out_byte_t, in_byte_t)
+           , Add #(_c, out_byte_idx_t, out_bit_idx_t)
+           , Add #(_d, out_byte_idx_t, addr_)
+           , Add #(_e, out_byte_idx_t, MaxBytesSz)
+           , Add #(_f, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           , Add #(_g, in_byte_idx_t, MaxBytesSz)
+           , Add #(_h, out_byte_idx_t, in_byte_idx_t)
+           , Add #(_i, out_bit_idx_t, in_bit_idx_t)
+           , Add #(_j, in_byte_idx_t, in_bit_idx_t)
+           , Add #(_k, in_byte_idx_t, addr_)
            );
   match {.aw_X, .w_X, .b_X, .aw_Y, .w_Y, .b_Y}
     <- mkAXI4WritesWideToNarrow (proxyBuffInDepth, proxyBuffOutDepth);
@@ -113,23 +126,26 @@ module mkAXI4DataWidthShim_NarrowToWide
   #( parameter NumProxy #(buffInDepth)  proxyBuffInDepth
    , parameter NumProxy #(buffOutDepth) proxyBuffOutDepth )
   // returned interface
-  (Tuple2 #( AXI4_Slave  #( id_, addr_, data_X
+  (Tuple2 #( AXI4_Slave  #( id_, addr_, in_bit_t
                           , awuser_, wuser_, buser_, aruser_, ruser_ )
-           , AXI4_Master #( id_, addr_, data_Y
+           , AXI4_Master #( id_, addr_, out_bit_t
                           , awuser_, wuser_, buser_, aruser_, ruser_ )))
-  provisos ( NumAlias #(out_byte_t, TDiv #(data_Y, 8))
+  provisos ( NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
+           , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , Add #(_a, data_X, data_Y)
-           , Add #(_b, TDiv#(data_X, 8), TDiv#(data_Y, 8))
-           , Mul #(TDiv#(data_Y, 8), 8, data_Y)
-           , Add #(_c, TLog#(TDiv#(data_X, 8)), TLog#(TDiv#(data_Y, 8)))
-           , Add #(_d, TLog#(TDiv#(data_X, 8)), TLog#(data_X))
-           , Add #(_e, TLog#(TDiv#(data_Y, 8)), TLog#(data_Y))
-           , Add #(_f, TLog#(TDiv#(data_Y, 8)), 16)
-           , Add #(_g, TLog#(TDiv#(data_Y, 8)), addr_)
-           , Add #(_h, TLog#(data_X), TLog#(data_Y))
-           , Add #(_i, out_byte_idx_t, MaxBytesSz)
-           , Add #(_j, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           , NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
+           , NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
+           , NumAlias #(in_byte_idx_t, TLog #(in_byte_t))
+           , Mul #(out_byte_t, 8, out_bit_t)
+           , Add #(_a, in_bit_t, out_bit_t)
+           , Add #(_b, in_byte_t, out_byte_t)
+           , Add #(_c, in_byte_idx_t, out_byte_idx_t)
+           , Add #(_d, in_byte_idx_t, in_bit_idx_t)
+           , Add #(_e, out_byte_idx_t, out_bit_idx_t)
+           , Add #(_f, out_byte_idx_t, addr_)
+           , Add #(_g, in_bit_idx_t, out_bit_idx_t)
+           , Add #(_h, out_byte_idx_t, MaxBytesSz)
+           , Add #(_i, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
            );
   match {.aw_X, .w_X, .b_X, .aw_Y, .w_Y, .b_Y}
     <- mkAXI4WritesNarrowToWide (proxyBuffInDepth, proxyBuffOutDepth);
@@ -211,7 +227,7 @@ function ActionValue #(AccessParams)
   // compute the target access length and check that it is less the maximum
   // AXI4 len of 256
   /////////////////////////////////////////////////////////////////////////
-  if (overflow == 0 && nFlits > 256) begin
+  if ((overflow != 0 && nFlits > 255) || nFlits > 256) begin
       $display ("error: too long AXI4 transfer (>256 flits) encountered");
       $finish;
   end
@@ -247,25 +263,36 @@ endactionvalue;
 // Convert wide writes to narrow writes
 ////////////////////////////////////////////////////////////////////////////////
 
+// XXX TODO: for the time being, this module does not break atomicity of
+// transactions and limits itself to one request in the destination AXI4 domain
+// per incoming request. Since the incoming requests are on a wider bus, it may
+// be impossible to fit the total requested amount of bytes in a single request
+// of the destination AXI4 domain. Such a request is explicitly not supported.
+// (undefined behaviour in hardware, assertion in simulation)
 module mkAXI4WritesWideToNarrow
   // received parameters
   #( parameter NumProxy #(buffInDepth)  proxyBuffInDepth
    , parameter NumProxy #(buffOutDepth) proxyBuffOutDepth)
   // returned interface
   (Tuple6 #( Sink #(AXI4_AWFlit #(id_, addr_, awuser_))
-           , Sink #(AXI4_WFlit #(data_X, wuser_))
+           , Sink #(AXI4_WFlit #(in_bit_t, wuser_))
            , Source #(AXI4_BFlit #(id_, buser_))
            , Source #(AXI4_AWFlit #(id_, addr_, awuser_))
-           , Source #(AXI4_WFlit #(data_Y, wuser_))
+           , Source #(AXI4_WFlit #(out_bit_t, wuser_))
            , Sink #(AXI4_BFlit #(id_, buser_)) ))
-  provisos ( NumAlias #(in_bit_idx_t, TLog #(data_X))
-           , NumAlias #(in_byte_idx_t, TLog #(TDiv #(data_X, 8)))
-           , NumAlias #(out_byte_t, TDiv #(data_Y, 8))
-           , NumAlias #(out_bit_idx_t, TLog #(data_Y))
+  provisos ( NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
+           , NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
+           , NumAlias #(in_byte_idx_t, TLog #(in_byte_t))
+           , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
+           , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , Add #(_a, data_Y, data_X)
-           , Add #(_b, out_byte_idx_t, MaxBytesSz)
-           , Add #(_c, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           , Add #(_a, out_bit_t, in_bit_t)
+           , Add #(_b, out_byte_t, in_byte_t)
+           , Add #(_c, out_byte_idx_t, out_bit_idx_t)
+           , Add #(_d, out_byte_idx_t, MaxBytesSz)
+           , Add #(_e, in_byte_idx_t, MaxBytesSz)
+           , Add #(_f, out_byte_idx_t, addr_)
+           , Add #(_g, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
            );
 
   // local declarations
@@ -276,9 +303,9 @@ module mkAXI4WritesWideToNarrow
   FIFOF #(AXI4_AWFlit #(id_, addr_, awuser_)) awffIn <- mkFIFOF;
   FIFOF #(AXI4_AWFlit #(id_, addr_, awuser_)) awffOut <- mkFIFOF;
   // Data request channel
-  FIFOF #(AXI4_WFlit #(data_X, wuser_))
+  FIFOF #(AXI4_WFlit #(in_bit_t, wuser_))
     wffIn <- mkSizedFIFOF (valueOf (buffInDepth));
-  FIFOF #(AXI4_WFlit #(data_Y, wuser_))
+  FIFOF #(AXI4_WFlit #(out_bit_t, wuser_))
     wffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
   // Response channel, single flit, passed straight through
   let bff <- mkFIFOF;
@@ -286,8 +313,7 @@ module mkAXI4WritesWideToNarrow
   // others //
   ////////////
   // local communication
-  //TODO let reqff <- mkBypassFIFOF;
-  FIFOF #(Bit #(0)) reqff <- mkBypassFIFOF;
+  let reqff <- mkBypassFIFOF;
 
   // handle address channel
   //////////////////////////////////////////////////////////////////////////////
@@ -317,7 +343,10 @@ module mkAXI4WritesWideToNarrow
     vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.aw_send, "
                        , "awflitOut ", fshow (awflitOut) ));
     // pass local information to the data channel handling rule
-    Bit #(0) reqffpayload = error ("TODO");
+    let reqffpayload = tuple4 ( awflitIn.awaddr
+                              , nBytes
+                              , awlenOut
+                              , awsizeOut );
     reqff.enq (reqffpayload);
     vPrint (3, $format ( "%m.mkAXI4WritesWideToNarrow.aw_send, "
                        , "reqffpayload ", fshow (reqffpayload) ));
@@ -325,24 +354,40 @@ module mkAXI4WritesWideToNarrow
 
   // handle data channel
   //////////////////////////////////////////////////////////////////////////////
+  Reg #(Bit #(MaxBytesSz)) cnt <- mkReg (0);
   rule w_send;
     vPrint (1, $format ("%m.mkAXI4WritesWideToNarrow.w_send"));
     // read current local information
     let reqffpayload = reqff.first;
     vPrint (3, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
                        , "reqffpayload ", fshow (reqffpayload) ));
+    match {.addr, .nBytes, .lenOut, .sizeOut} = reqffpayload;
     // read current incoming data flit
     let wflitIn = wffIn.first;
     vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
                        , "wflitIn ", fshow (wflitIn) ));
     // derive the new outgoing data flit
-    AXI4_WFlit #(data_Y, wuser_) wflitOut = error ("TODO");
+    Bit #(out_byte_idx_t) width = 1 << pack (sizeOut);
+    Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
+    Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
+    Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
+    //reqDataOut = wffIn.wdata[hiOutBit:loOutBit];
+    Bit #(out_bit_t) reqDataOut = truncate (wflitIn.wdata >> loOutBit);
+    Bit #(out_byte_t) reqStrbOut = truncate (wflitIn.wstrb >> loOut);
+    // did we reach the last flit
+    Bool isLast = newCnt >= nBytes;
+    AXI4_WFlit #(out_bit_t, wuser_) wflitOut = AXI4_WFlit {
+        wdata: reqDataOut
+      , wstrb: reqStrbOut
+      , wlast: isLast
+      , wuser: wflitIn.wuser };
     // send the outgoing data flit
     wffOut.enq (wflitOut);
     vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
                        , "wflitOut ", fshow (wflitOut) ));
-    // when the whole request is handled, consume local information
-    let requestHandled = error ("TODO");
+    // when the whole request is handled, consume local information and reset
+    // byte counter
+    Bool requestHandled = isLast;
     if (requestHandled) begin
       reqff.deq;
       vPrint (3, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
@@ -350,12 +395,14 @@ module mkAXI4WritesWideToNarrow
     end
     // when the incoming flit is fully utilized (and on end of request),
     // consume it
-    let flitUtilized = error ("TODO");
+    Bit #(in_byte_idx_t) cntOffset = truncate (newCnt);
+    Bool flitUtilized = cntOffset == 0;
     if (requestHandled || flitUtilized) begin
       wffIn.deq;
       vPrint (3, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
                          , "wflitIn fully utilized, consuming it" ));
     end
+    cnt <= (isLast) ? 0 : newCnt;
   endrule
 
   // return channels as interface
@@ -368,16 +415,40 @@ endmodule
 // Convert wide reads to narrow reads
 ////////////////////////////////////////////////////////////////////////////////
 
+// XXX TODO: for the time being, this module does not break atomicity of
+// transactions and limits itself to one request in the destination AXI4 domain
+// per incoming request. Since the incoming requests are on a wider bus, it may
+// be impossible to fit the total requested amount of bytes in a single request
+// of the destination AXI4 domain. Such a request is explicitly not supported.
+// (undefined behaviour in hardware, assertion in simulation)
 module mkAXI4ReadsWideToNarrow
   // received parameters
   #( parameter NumProxy #(buffInDepth)  proxyBuffInDepth
    , parameter NumProxy #(buffOutDepth) proxyBuffOutDepth)
   // returned interface
   (Tuple4 #( Sink #(AXI4_ARFlit #(id_, addr_, aruser_))
-           , Source #(AXI4_RFlit #(id_, data_X, ruser_))
+           , Source #(AXI4_RFlit #(id_, in_bit_t, ruser_))
            , Source #(AXI4_ARFlit #(id_, addr_, aruser_))
-           , Sink #(AXI4_RFlit #(id_, data_Y, ruser_)) ))
-  provisos (Add #(_, data_Y, data_X));
+           , Sink #(AXI4_RFlit #(id_, out_bit_t, ruser_)) ))
+  provisos ( NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
+           , NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
+           , NumAlias #(in_byte_idx_t, TLog #(in_byte_t))
+           , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
+           , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
+           , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
+           , Alias #(t_local, Tuple3 #( Bit #(addr_)
+                                      , Bit #(MaxBytesSz)
+                                      , AXI4_Size ))
+           , Mul #(in_byte_t, 8, in_bit_t)
+           , Add #(_a, out_bit_t, in_bit_t)
+           , Add #(_b, out_byte_idx_t, in_byte_idx_t)
+           , Add #(_c, out_bit_idx_t, in_bit_idx_t)
+           , Add #(_d, in_byte_idx_t, in_bit_idx_t)
+           , Add #(_e, in_byte_idx_t, MaxBytesSz)
+           , Add #(_f, in_byte_idx_t, addr_)
+           , Add #(_g, out_byte_idx_t, MaxBytesSz)
+           , Add #(_h, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           );
 
   // local declarations
   //////////////////////////////////////////////////////////////////////////////
@@ -387,15 +458,15 @@ module mkAXI4ReadsWideToNarrow
   FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffIn <- mkFIFOF;
   FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffOut <- mkFIFOF;
   // Data response channel
-  FIFOF #(AXI4_RFlit #(id_, data_X, ruser_))
+  FIFOF #(AXI4_RFlit #(id_, in_bit_t, ruser_))
     rffIn <- mkSizedFIFOF (valueOf (buffInDepth));
-  FIFOF #(AXI4_RFlit #(id_, data_Y, ruser_))
+  FIFOF #(AXI4_RFlit #(id_, out_bit_t, ruser_))
     rffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
   ////////////
   // others //
   ////////////
   // local state to remember addresses
-  Vector #(TExp #(id_), FIFOF #(Bit #(0))) localff <- replicateM (mkUGFIFOF);
+  Vector #(TExp #(id_), FIFOF #(t_local)) localff <- replicateM (mkUGFIFOF);
 
   // handle address channel
   //////////////////////////////////////////////////////////////////////////////
@@ -407,13 +478,26 @@ module mkAXI4ReadsWideToNarrow
     vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
                        , "arflitIn ", fshow (arflitIn) ));
     // derive the new outgoing address request
-    AXI4_ARFlit #(id_, addr_, aruser_) arflitOut = error ("TODO");
+    NumProxy #(out_byte_t) proxyBusW = ?;
+    match {.nBytes, .arlenOut, .arsizeOut} <-
+      deriveAccessParams (proxyBusW, arflitIn.arlen, arflitIn.arsize);
+    let arflitOut = AXI4_ARFlit { arid: arflitIn.arid
+                                , araddr: arflitIn.araddr
+                                , arlen: arlenOut
+                                , arsize: arsizeOut
+                                , arburst: arflitIn.arburst
+                                , arlock: arflitIn.arlock
+                                , arcache: arflitIn.arcache
+                                , arprot: arflitIn.arprot
+                                , arqos: arflitIn.arqos
+                                , arregion: arflitIn.arregion
+                                , aruser: arflitIn.aruser };
     // send the outgoing address request
     arffOut.enq (arflitOut);
     vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
                        , "arflitOut ", fshow (arflitOut) ));
     // pass local information to the data channel handling rule
-    Bit #(0) localpayload = error ("TODO");
+    t_local localpayload = tuple3 (arflitIn.araddr, nBytes, arsizeOut);
     localff[arflitIn.arid].enq (localpayload);
     vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
                        , "localpayload ", fshow (localpayload) ));
@@ -421,6 +505,8 @@ module mkAXI4ReadsWideToNarrow
 
   // handle data response channel
   //////////////////////////////////////////////////////////////////////////////
+  Reg #(Bit #(MaxBytesSz)) cnt <- mkReg (0);
+  Reg #(Bit #(in_bit_t)) data <- mkRegU;
   let rflitOut = rffOut.first;
   rule r_accumulate_send (localff[rflitOut.rid].notEmpty);
     vPrint (1, $format ("%m.mkAXI4ReadsWideToNarrow.r_accumulate_send"));
@@ -428,29 +514,54 @@ module mkAXI4ReadsWideToNarrow
     vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                        , "localff[rflitOut.rid].first "
                        , fshow (localff[rflitOut.rid].first) ));
-    //match {.addr, .nBytes} = localff[rflitOut.rid].first;
+    match {.addr, .nBytes, .sizeOut} = localff[rflitOut.rid].first;
     // read and consume incoming data response flit
     rffOut.deq;
     vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                        , "rflitOut ", fshow (rflitOut) ));
     // accumulate the data and book-keep
-    //let newData = data;
-    //let newByteCnt = byteCnt;
+    Bit #(in_byte_idx_t)     width = 1 << pack (sizeOut);
+    Bit #(in_byte_idx_t)      loIn = truncate (addr) + truncate (cnt);
+    Bit #(out_byte_idx_t)    loOut = truncate (loIn);
+    Bit #(in_bit_idx_t)    loInBit = zeroExtend (loIn) << 3;
+    Bit #(out_bit_idx_t)  loOutBit = truncate (loInBit);
+    Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
+    //tmpData[hiInBit:loInBit] = rflitOut.rdata[hiOutBit:loOutBit];
+    Bit #(in_byte_t) msk = ~(~0 << width) << loIn;
+    Bit #(out_bit_t) tmpDataOut = rflitOut.rdata >> loOutBit;
+    Bit #(in_bit_t) tmpDataIn = zeroExtend (tmpDataOut) << loInBit;
+    Bit #(in_bit_t) newData = mergeWithBE (msk, data, tmpDataIn);
     // when the burst is finished, consume local information
-    let burstFinished = error ("TODO");
+    let burstFinished = newCnt == nBytes;
     if (burstFinished) begin
       localff[rflitOut.rid].deq;
       vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                          , "consume localff[rflitOut.rid]" ));
     end
     // when a whole flit is ready, send it over
-    let flitReady = error ("TODO");
+    Bit #(in_byte_idx_t) cntOffset = truncate (newCnt);
+    let flitReady = cntOffset == 0;
     if (burstFinished || flitReady) begin
-      AXI4_RFlit #(id_, data_X, ruser_) rflitIn = error ("TODO");
+      AXI4_RFlit #(id_, in_bit_t, ruser_) rflitIn = AXI4_RFlit {
+          rid: rflitOut.rid
+        , rdata: newData
+        , rresp: rflitOut.rresp
+        , rlast: burstFinished
+        // XXX better thing to do here?
+        , ruser: rflitOut.ruser };
       rffIn.enq (rflitIn);
       vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                          , "rflitIn ", fshow (rflitIn) ));
     end
+    // accumulate state
+    cnt <= newCnt;
+    data <= newData;
+    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
+                       , "cnt (", fshow (cnt)
+                       , ") <= newCnt (", fshow (newCnt), ")" ));
+    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
+                       , "data (", fshow (data)
+                       , ") <= newData (", fshow (newData), ")" ));
   endrule
 
   // return channels as interface
@@ -471,27 +582,29 @@ module mkAXI4WritesNarrowToWide
    , parameter NumProxy #(buffOutDepth) proxyBuffOutDepth)
   // returned interface
   (Tuple6 #( Sink #(AXI4_AWFlit #(id_, addr_, awuser_))
-           , Sink #(AXI4_WFlit #(data_X, wuser_))
+           , Sink #(AXI4_WFlit #(in_bit_t, wuser_))
            , Source #(AXI4_BFlit #(id_, buser_))
            , Source #(AXI4_AWFlit #(id_, addr_, awuser_))
-           , Source #(AXI4_WFlit #(data_Y, wuser_))
+           , Source #(AXI4_WFlit #(out_bit_t, wuser_))
            , Sink #(AXI4_BFlit #(id_, buser_)) ))
-  provisos ( NumAlias #(in_bit_idx_t, TLog #(data_X))
-           , NumAlias #(in_byte_idx_t, TLog #(TDiv #(data_X, 8)))
-           , NumAlias #(out_byte_t, TDiv #(data_Y, 8))
-           , NumAlias #(out_bit_idx_t, TLog #(data_Y))
+  provisos ( NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
+           , NumAlias #(in_byte_idx_t, TLog #(TDiv #(in_bit_t, 8)))
+           , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
+           , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , Mul #(TDiv#(data_Y, 8), 8, data_Y)
-           , Add #(_a, data_X, data_Y)
-           , Add #(_b, TDiv#(data_X, 8), TDiv#(data_Y, 8))
+           , Mul #(TDiv#(out_bit_t, 8), 8, out_bit_t)
+           , Div #(in_bit_t, 8, in_byte_t)
+           , Add #(_a, in_bit_t, out_bit_t)
+           , Add #(_b, TDiv#(in_bit_t, 8), TDiv#(out_bit_t, 8))
            , Add #(_c, out_byte_idx_t, MaxBytesSz)
-           , Add #(_d, in_byte_idx_t, in_bit_idx_t)
-           , Add #(_e, out_byte_idx_t, out_bit_idx_t)
-           , Add #(_f, in_byte_idx_t, out_byte_idx_t)
-           , Add #(_r, in_bit_idx_t, out_bit_idx_t)
-           , Add #(_h, out_byte_idx_t, addr_)
-           , Add #(_i, out_byte_idx_t, MaxBytesSz)
-           , Add #(_j, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           , Add #(_d, in_byte_t, out_byte_t)
+           , Add #(_e, in_byte_idx_t, in_bit_idx_t)
+           , Add #(_f, out_byte_idx_t, out_bit_idx_t)
+           , Add #(_g, in_byte_idx_t, out_byte_idx_t)
+           , Add #(_h, in_bit_idx_t, out_bit_idx_t)
+           , Add #(_i, out_byte_idx_t, addr_)
+           , Add #(_j, out_byte_idx_t, MaxBytesSz)
+           , Add #(_k, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
            );
 
   // local declarations
@@ -502,9 +615,9 @@ module mkAXI4WritesNarrowToWide
   FIFOF #(AXI4_AWFlit #(id_, addr_, awuser_)) awffIn <- mkFIFOF;
   FIFOF #(AXI4_AWFlit #(id_, addr_, awuser_)) awffOut <- mkFIFOF;
   // Data request channel
-  FIFOF #(AXI4_WFlit #(data_X, wuser_))
+  FIFOF #(AXI4_WFlit #(in_bit_t, wuser_))
     wffIn <- mkSizedFIFOF (valueOf (buffInDepth));
-  FIFOF #(AXI4_WFlit #(data_Y, wuser_))
+  FIFOF #(AXI4_WFlit #(out_bit_t, wuser_))
     wffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
   // Response channel, single flit, passed straight through
   let bff <- mkFIFOF;
@@ -554,8 +667,8 @@ module mkAXI4WritesNarrowToWide
   //////////////////////////////////////////////////////////////////////////////
   //local state
   Reg #(Bit #(MaxBytesSz)) cnt <- mkReg (0);
-  Reg #(Bit #(TDiv #(data_Y, 8))) strb <- mkReg (0);
-  Reg #(Bit #(data_Y)) data <- mkRegU;
+  Reg #(Bit #(out_byte_t)) strb <- mkReg (0);
+  Reg #(Bit #(out_bit_t)) data <- mkRegU;
   rule w_accumulate_send;
     vPrint (1, $format ("%m.mkAXI4WritesNarrowToWide.w_accumulate_send"));
     // read current local information
@@ -577,13 +690,13 @@ module mkAXI4WritesNarrowToWide
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //tmpStrb[hiOut:loOut] = wflitIn.wstrb[hiIn:loIn];
     //tmpData[hiOutBit:loOutBit] = wflitIn.wdata[hiInBit:loInBit];
-    Bit #(TDiv #(data_Y, 8)) msk = ~(~0 << width) << loOut;
-    Bit #(TDiv #(data_X, 8)) tmpStrbIn = wflitIn.wstrb >> loIn;
-    Bit #(TDiv #(data_Y, 8)) tmpStrbOut = zeroExtend (tmpStrbIn) << loOut;
-    Bit #(TDiv #(data_Y, 8)) newStrb = mergeWithMask (msk, strb, tmpStrbOut);
-    Bit #(data_X) tmpDataIn = wflitIn.wdata >> loInBit;
-    Bit #(data_Y) tmpDataOut = zeroExtend (tmpDataIn) << loOutBit;
-    Bit #(data_Y) newData = mergeWithBE (msk, data, tmpDataOut);
+    Bit #(out_byte_t) msk = ~(~0 << width) << loOut;
+    Bit #(in_byte_t) tmpStrbIn = wflitIn.wstrb >> loIn;
+    Bit #(out_byte_t) tmpStrbOut = zeroExtend (tmpStrbIn) << loOut;
+    Bit #(out_byte_t) newStrb = mergeWithMask (msk, strb, tmpStrbOut);
+    Bit #(in_bit_t) tmpDataIn = wflitIn.wdata >> loInBit;
+    Bit #(out_bit_t) tmpDataOut = zeroExtend (tmpDataIn) << loOutBit;
+    Bit #(out_bit_t) newData = mergeWithBE (msk, data, tmpDataOut);
     // did we reach the last flit
     Bool isLast = newCnt == nBytes;
     vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
@@ -654,19 +767,19 @@ module mkAXI4ReadsNarrowToWide
    , parameter NumProxy #(buffOutDepth) proxyBuffOutDepth)
   // returned interface
   (Tuple4 #( Sink #(AXI4_ARFlit #(id_, addr_, aruser_))
-           , Source #(AXI4_RFlit #(id_, data_X, ruser_))
+           , Source #(AXI4_RFlit #(id_, in_bit_t, ruser_))
            , Source #(AXI4_ARFlit #(id_, addr_, aruser_))
-           , Sink #(AXI4_RFlit #(id_, data_Y, ruser_)) ))
-  provisos ( NumAlias #(in_bit_idx_t, TLog #(data_X))
-           , NumAlias #(in_byte_idx_t, TLog #(TDiv #(data_X, 8)))
-           , NumAlias #(out_byte_t, TDiv #(data_Y, 8))
-           , NumAlias #(out_bit_idx_t, TLog #(data_Y))
+           , Sink #(AXI4_RFlit #(id_, out_bit_t, ruser_)) ))
+  provisos ( NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
+           , NumAlias #(in_byte_idx_t, TLog #(TDiv #(in_bit_t, 8)))
+           , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
+           , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
            , Alias #(local_info, Tuple4 #( Bit #(MaxBytesSz)
                                          , Bit #(addr_)
                                          , AXI4_Size
                                          , AXI4_Len ))
-           , Add #(_a, data_X, data_Y)
+           , Add #(_a, in_bit_t, out_bit_t)
            , Add #(_b, out_byte_idx_t, MaxBytesSz)
            , Add #(_c, in_byte_idx_t, in_bit_idx_t)
            , Add #(_d, out_byte_idx_t, out_bit_idx_t)
@@ -685,9 +798,9 @@ module mkAXI4ReadsNarrowToWide
   FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffIn <- mkFIFOF;
   FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffOut <- mkFIFOF;
   // Data response channel
-  FIFOF #(AXI4_RFlit #(id_, data_X, ruser_))
+  FIFOF #(AXI4_RFlit #(id_, in_bit_t, ruser_))
     rffIn <- mkSizedFIFOF (valueOf (buffInDepth));
-  FIFOF #(AXI4_RFlit #(id_, data_Y, ruser_))
+  FIFOF #(AXI4_RFlit #(id_, out_bit_t, ruser_))
     rffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
   ////////////
   // others //
@@ -756,8 +869,8 @@ module mkAXI4ReadsNarrowToWide
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //rspData[hiInBit:loInBit] = rflitOut.rdata[hiOutBit:loOutBit];
-    Bit #(data_Y) rspDataOut = rflitOut.rdata >> loOutBit;
-    Bit #(data_X) rspDataIn = truncate (rspDataOut << loInBit);
+    Bit #(out_bit_t) rspDataOut = rflitOut.rdata >> loOutBit;
+    Bit #(in_bit_t) rspDataIn = truncate (rspDataOut << loInBit);
     // did we reach the last flit
     Bool isLast = newCnt == nBytes;
     // push a response
