@@ -331,7 +331,7 @@ module mkAXI4WritesWideToNarrow
                                 , awaddr: awflitIn.awaddr
                                 , awlen: awlenOut
                                 , awsize: awsizeOut
-                                , awburst: awflitIn.awburst
+                                , awburst: INCR
                                 , awlock: awflitIn.awlock
                                 , awcache: awflitIn.awcache
                                 , awprot: awflitIn.awprot
@@ -485,7 +485,7 @@ module mkAXI4ReadsWideToNarrow
                                 , araddr: arflitIn.araddr
                                 , arlen: arlenOut
                                 , arsize: arsizeOut
-                                , arburst: arflitIn.arburst
+                                , arburst: INCR
                                 , arlock: arflitIn.arlock
                                 , arcache: arflitIn.arcache
                                 , arprot: arflitIn.arprot
