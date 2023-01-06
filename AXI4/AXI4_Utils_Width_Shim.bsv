@@ -538,7 +538,7 @@ module mkAXI4ReadsWideToNarrow
       vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                          , "consume localff[rflitOut.rid]" ));
     end
-    // when a whole flit is ready, send it over
+    // when a whole flit is ready, send it over and reset flit count
     Bit #(in_byte_idx_t) cntOffset = truncate (newCnt);
     let flitReady = cntOffset == 0;
     if (burstFinished || flitReady) begin
@@ -550,6 +550,7 @@ module mkAXI4ReadsWideToNarrow
         // XXX better thing to do here?
         , ruser: rflitOut.ruser };
       rffIn.enq (rflitIn);
+      newCnt = 0;
       vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                          , "rflitIn ", fshow (rflitIn) ));
     end
