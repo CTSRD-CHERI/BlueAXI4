@@ -37,7 +37,29 @@ import BlueUnixBridges :: *;
 ////////////////////////////////////////////////////////////////////////////////
 module mkUnixFifo_AXI4_Master #(String dirname)
   (AXI4_Master #( t_id, t_addr, t_data, t_awuser, t_wuser, t_buser
-                                      , t_aruser, t_ruser ));
+                                      , t_aruser, t_ruser ))
+  provisos (
+    NumAlias #(aw_bitsz, SizeOf #(AXI4_AWFlit #(t_id, t_addr, t_awuser)))
+  , NumAlias #(aw_bytesz, TDiv #(aw_bitsz, 8))
+  , NumAlias #(w_bitsz, SizeOf #(AXI4_WFlit #(t_data, t_wuser)))
+  , NumAlias #(w_bytesz, TDiv #(w_bitsz, 8))
+  , NumAlias #(b_bitsz, SizeOf #(AXI4_BFlit #(t_id, t_buser)))
+  , NumAlias #(b_bytesz, TDiv #(b_bitsz, 8))
+  , NumAlias #(ar_bitsz, SizeOf #(AXI4_ARFlit #(t_id, t_addr, t_aruser)))
+  , NumAlias #(ar_bytesz, TDiv #(ar_bitsz, 8))
+  , NumAlias #(r_bitsz, SizeOf #(AXI4_RFlit #(t_id, t_data, t_ruser)))
+  , NumAlias #(r_bytesz, TDiv #(r_bitsz, 8))
+  , Add #(_a, aw_bitsz, TMul #(aw_bytesz, 8))
+  , Add #(_b, w_bitsz, TMul #(w_bytesz, 8))
+  , Add #(_c, b_bitsz, TMul #(b_bytesz, 8))
+  , Add #(_d, ar_bitsz, TMul #(ar_bytesz, 8))
+  , Add #(_e, r_bitsz, TMul #(r_bytesz, 8))
+  , Add #(1, _aa, aw_bitsz)
+  , Add #(1, _bb, w_bitsz)
+  , Add #(1, _cc, b_bitsz)
+  , Add #(1, _dd, ar_bitsz)
+  , Add #(1, _ee, r_bitsz)
+  );
 
   let awSrc <- mkUnixFifoSource (dirname +  "/awSink");
   let  wSrc <- mkUnixFifoSource (dirname +   "/wSink");
@@ -55,7 +77,29 @@ endmodule
 ////////////////////////////////////////////////////////////////////////////////
 module mkUnixFifo_AXI4_Slave #(String dirname)
   (AXI4_Slave #( t_id, t_addr, t_data, t_awuser, t_wuser, t_buser
-                                     , t_aruser, t_ruser ));
+                                     , t_aruser, t_ruser ))
+  provisos (
+    NumAlias #(aw_bitsz, SizeOf #(AXI4_AWFlit #(t_id, t_addr, t_awuser)))
+  , NumAlias #(aw_bytesz, TDiv #(aw_bitsz, 8))
+  , NumAlias #(w_bitsz, SizeOf #(AXI4_WFlit #(t_data, t_wuser)))
+  , NumAlias #(w_bytesz, TDiv #(w_bitsz, 8))
+  , NumAlias #(b_bitsz, SizeOf #(AXI4_BFlit #(t_id, t_buser)))
+  , NumAlias #(b_bytesz, TDiv #(b_bitsz, 8))
+  , NumAlias #(ar_bitsz, SizeOf #(AXI4_ARFlit #(t_id, t_addr, t_aruser)))
+  , NumAlias #(ar_bytesz, TDiv #(ar_bitsz, 8))
+  , NumAlias #(r_bitsz, SizeOf #(AXI4_RFlit #(t_id, t_data, t_ruser)))
+  , NumAlias #(r_bytesz, TDiv #(r_bitsz, 8))
+  , Add #(_a, aw_bitsz, TMul #(aw_bytesz, 8))
+  , Add #(_b, w_bitsz, TMul #(w_bytesz, 8))
+  , Add #(_c, b_bitsz, TMul #(b_bytesz, 8))
+  , Add #(_d, ar_bitsz, TMul #(ar_bytesz, 8))
+  , Add #(_e, r_bitsz, TMul #(r_bytesz, 8))
+  , Add #(1, _aa, aw_bitsz)
+  , Add #(1, _bb, w_bitsz)
+  , Add #(1, _cc, b_bitsz)
+  , Add #(1, _dd, ar_bitsz)
+  , Add #(1, _ee, r_bitsz)
+  );
 
   let awSnk <- mkUnixFifoSink   (dirname + "/awSource");
   let  wSnk <- mkUnixFifoSink   (dirname +  "/wSource");
