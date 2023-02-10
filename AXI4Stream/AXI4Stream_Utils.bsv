@@ -41,17 +41,18 @@ import SourceSink :: *;
 import AXI4Stream_Types :: *;
 
 module mkAXI4StreamShim
-  #(function module #(FIFOF #(AXI4Stream_Flit #(a, b, c, d))) mkFF ())
-  (AXI4Stream_Shim#(a, b, c, d));
-  let ff <- mkFF;
-  method clear = ff.clear;
-  interface master = toSource(ff);
-  interface slave  = toSink(ff);
+  #(function module #(source_sink_t #(AXI4Stream_Flit #(a, b, c, d))) mkSS ())
+  (AXI4Stream_Shim#(a, b, c, d))
+  provisos (ToSourceSinkShim #( source_sink_t #(AXI4Stream_Flit #(a, b, c, d))
+                              , AXI4Stream_Flit #(a, b, c, d) ));
+  let ss <- mkSS;
+  interface master = toSource(ss);
+  interface slave  = toSink(ss);
 endmodule
 
-`define defAXI4StreamShimFIFOF (name, mkFF)\
+`define defAXI4StreamShimFIFOF (name, mkSS)\
 module mkAXI4StreamShim``name (AXI4Stream_Shim#(a, b, c, d));\
-  let shim <- mkAXI4StreamShim (mkFF);\
+  let shim <- mkAXI4StreamShim (mkSS);\
   return shim;\
 endmodule
 

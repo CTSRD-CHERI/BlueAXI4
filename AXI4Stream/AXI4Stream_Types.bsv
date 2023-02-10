@@ -115,7 +115,6 @@ interface AXI4Stream_Shim #( numeric type id_
                            , numeric type data_
                            , numeric type dest_
                            , numeric type user_);
-  method Action clear;
   interface AXI4Stream_Master #(id_, data_, dest_, user_) master;
   interface AXI4Stream_Slave #(id_, data_, dest_, user_) slave;
 endinterface
