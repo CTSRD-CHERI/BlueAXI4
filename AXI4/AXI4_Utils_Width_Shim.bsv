@@ -367,7 +367,7 @@ module mkAXI4WritesWideToNarrow
     vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
                        , "wflitIn ", fshow (wflitIn) ));
     // derive the new outgoing data flit
-    Bit #(out_byte_idx_t) width = 1 << pack (sizeOut);
+    Bit #(in_byte_idx_t) width = 1 << pack (sizeOut);
     Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
