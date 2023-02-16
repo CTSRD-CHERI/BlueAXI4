@@ -288,10 +288,10 @@ module mkAXI4WritesWideToNarrow
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
            , Add #(_a, out_bit_t, in_bit_t)
            , Add #(_b, out_byte_t, in_byte_t)
-           , Add #(_c, out_byte_idx_t, out_bit_idx_t)
+           , Add #(_c, in_byte_idx_t, in_bit_idx_t)
            , Add #(_d, out_byte_idx_t, MaxBytesSz)
            , Add #(_e, in_byte_idx_t, MaxBytesSz)
-           , Add #(_f, out_byte_idx_t, addr_)
+           , Add #(_f, in_byte_idx_t, addr_)
            , Add #(_g, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
            );
 
@@ -368,8 +368,8 @@ module mkAXI4WritesWideToNarrow
                        , "wflitIn ", fshow (wflitIn) ));
     // derive the new outgoing data flit
     Bit #(in_byte_idx_t) width = 1 << pack (sizeOut);
-    Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
-    Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
+    Bit #(in_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
+    Bit #(in_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //reqDataOut = wffIn.wdata[hiOutBit:loOutBit];
     Bit #(out_bit_t) reqDataOut = truncate (wflitIn.wdata >> loOutBit);
