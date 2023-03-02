@@ -368,7 +368,7 @@ module mkAXI4WritesWideToNarrow
                        , "wflitIn ", fshow (wflitIn) ));
     // derive the new outgoing data flit
     Bit #(in_byte_idx_t) width = 1 << pack (sizeOut);
-    Bit #(in_byte_idx_t) loOut = truncate (cnt);
+    Bit #(in_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(in_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //reqDataOut = wffIn.wdata[hiOutBit:loOutBit];
@@ -521,7 +521,7 @@ module mkAXI4ReadsWideToNarrow
                        , "rflitOut ", fshow (rflitOut) ));
     // accumulate the data and book-keep
     Bit #(in_byte_idx_t)     width = 1 << pack (sizeOut);
-    Bit #(in_byte_idx_t)      loIn = truncate (cnt);
+    Bit #(in_byte_idx_t)      loIn = truncate (addr) + truncate (cnt);
     Bit #(out_byte_idx_t)    loOut = truncate (loIn);
     Bit #(in_bit_idx_t)    loInBit = zeroExtend (loIn) << 3;
     Bit #(out_bit_idx_t)  loOutBit = truncate (loInBit);
@@ -683,7 +683,7 @@ module mkAXI4WritesNarrowToWide
                        , "wflitIn ", fshow (wflitIn) ));
     // derive the relevant data indices
     Bit #(out_byte_idx_t) width = 1 << pack (awsizeIn);
-    Bit #(out_byte_idx_t) loOut = truncate (cnt);
+    Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(in_byte_idx_t) loIn = truncate (loOut);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
@@ -865,7 +865,7 @@ module mkAXI4ReadsNarrowToWide
                        , "rflitOut ", fshow (rflitOut) ));
     // accumulate the data and book-keep
     Bit #(out_byte_idx_t) width = 1 << pack (arsize);
-    Bit #(out_byte_idx_t) loOut = truncate (cnt);
+    Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
