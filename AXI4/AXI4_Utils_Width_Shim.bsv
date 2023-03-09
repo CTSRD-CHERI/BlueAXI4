@@ -595,12 +595,12 @@ module mkAXI4WritesNarrowToWide
            , Source #(AXI4_WFlit #(out_bit_t, wuser_))
            , Sink #(AXI4_BFlit #(id_, buser_)) ))
   provisos ( NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
-           , NumAlias #(in_byte_idx_t, TLog #(TDiv #(in_bit_t, 8)))
+           , NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
+           , NumAlias #(in_byte_idx_t, TLog #(in_byte_t))
            , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
            , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
            , Mul #(TDiv#(out_bit_t, 8), 8, out_bit_t)
-           , Div #(in_bit_t, 8, in_byte_t)
            , Add #(_a, in_bit_t, out_bit_t)
            , Add #(_b, TDiv#(in_bit_t, 8), TDiv#(out_bit_t, 8))
            , Add #(_c, out_byte_idx_t, MaxBytesSz)
@@ -695,17 +695,34 @@ module mkAXI4WritesNarrowToWide
     Bit #(in_byte_idx_t) loIn = truncate (loOut);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
+    vPrint (4, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send"
+                       , ", width: ", fshow (width)
+                       , ", loOut: ", fshow (loOut)
+                       , ", loIn: ", fshow (loIn)
+                       , ", loOutBit: ", fshow (loOutBit)
+                       , ", loInBit: ", fshow (loInBit)
+                       ));
     // accumulate the data and book-keep
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //tmpStrb[hiOut:loOut] = wflitIn.wstrb[hiIn:loIn];
     //tmpData[hiOutBit:loOutBit] = wflitIn.wdata[hiInBit:loInBit];
-    Bit #(out_byte_t) msk = ~(~0 << width) << loOut;
-    Bit #(in_byte_t) tmpStrbIn = wflitIn.wstrb >> loIn;
-    Bit #(out_byte_t) tmpStrbOut = zeroExtend (tmpStrbIn) << loOut;
+    Bit #(in_byte_t) inMsk = ~0;
+    Bit #(out_byte_t) msk = zeroExtend (inMsk) << loOut;
+    Bit #(out_byte_t) tmpStrbOut = zeroExtend (wflitIn.wstrb) << loOut;
     Bit #(out_byte_t) newStrb = mergeWithMask (msk, strb, tmpStrbOut);
     Bit #(in_bit_t) tmpDataIn = wflitIn.wdata >> loInBit;
     Bit #(out_bit_t) tmpDataOut = zeroExtend (tmpDataIn) << loOutBit;
     Bit #(out_bit_t) newData = mergeWithBE (msk, data, tmpDataOut);
+    vPrint (4, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send"
+                       , ", msk: ", fshow (msk)
+                       , ", wflitIn.strb: ", fshow (wflitIn.wstrb)
+                       , ", tmpStrbOut: ", fshow (tmpStrbOut)
+                       , ", strb: ", fshow (strb)
+                       , ", newStrb: ", fshow (newStrb)
+                       , ", tmpDataIn: ", fshow (tmpDataIn)
+                       , ", tmpDataOut: ", fshow (tmpDataOut)
+                       , ", newData: ", fshow (newData)
+                       ));
     // did we reach the last flit
     Bool isLast = newCnt == nBytes;
     vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
