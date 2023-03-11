@@ -932,7 +932,7 @@ module mkAXI4ReadsNarrowToWide
     end
     // state update
     cnt <= newCnt;
-    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
+    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
                        , "cnt (", fshow (cnt)
                        , ") <= newCnt (", fshow (newCnt), ")" ));
   endrule
