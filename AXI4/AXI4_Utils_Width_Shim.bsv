@@ -60,6 +60,11 @@ Integer verbosity_level = 0;
 function Action vPrint (Integer lvl, Fmt fmt) =
   action if (verbosity_level >= lvl) $display ("%0t - ", $time, fmt); endaction;
 
+function Action die (Fmt fmt) = action
+  $display ("%0t - ", $time, fmt);
+  $finish;
+endaction;
+
 //////////////////////
 // exposed wrappers //
 ////////////////////////////////////////////////////////////////////////////////
@@ -208,51 +213,39 @@ function ActionValue #(AccessParams)
            , Add #(_b, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, busOffset_t))
            ) = actionvalue
 
-  // assert that the bus width is a power of 2
-  if (!isPowerOf2 (valueOf (newBusByteW))) begin
-    $display ("desired bus width should be a power of 2");
-    $finish;
-  end
-
   // compute number of bytes in the access and derived values
   ///////////////////////////////////////////////////////////
   Bit #(MaxBytesSz) nBytes = (zeroExtend (lenIn) + 1) << pack (sizeIn);
   Bit #(busOffset_t) overflow = truncate (nBytes);
   Bit #(flitIdx_t) nFlits = truncateLSB (nBytes);
-  if (overflow == 0 && nFlits == 0) begin
-      $display ("error: encountered AXI4 transfer with 0 flits");
-      $finish;
-  end
+  Bool fitsInNewBus = nBytes <= fromInteger (valueOf (newBusByteW));
+  vPrint (4, $format ("%m.deriveAccessParams - nBytes: %0d", nBytes));
+  vPrint (4, $format ("%m.deriveAccessParams - overflow: %0d", overflow));
+  vPrint (4, $format ("%m.deriveAccessParams - nFlits: %0d", nFlits));
+  vPrint (4, $format ( "%m.deriveAccessParams - fitsInNewBus: "
+                     , fshow (fitsInNewBus) ));
+  // derive new AXI4 len and size
+  ///////////////////////////////
+  AXI4_Len lenOut = fitsInNewBus ? 0 : truncate (nFlits - 1);
+  AXI4_Size sizeOut = ?;
+  case (toAXI4_Size (truncate (nBytes))) matches
+    .* &&& (!fitsInNewBus && overflow == 0):
+      sizeOut = toAXI4_Size (fromInteger (valueOf (newBusByteW))).Valid;
+    .* &&& (!fitsInNewBus && overflow != 0): sizeOut = sizeIn;
+    tagged Valid .x &&& fitsInNewBus: sizeOut = x;
+    default: die ($format ("error: unsupported AXI4 size encountered"));
+  endcase
+  vPrint (4, $format ("%m.deriveAccessParams - lenOut: %0d", lenOut));
+  vPrint (4, $format ("%m.deriveAccessParams - sizeOut: %0d", sizeOut));
 
-  // compute the target access length and check that it is less the maximum
-  // AXI4 len of 256
-  /////////////////////////////////////////////////////////////////////////
-  if ((overflow != 0 && nFlits > 255) || nFlits > 256) begin
-      $display ("error: too long AXI4 transfer (>256 flits) encountered");
-      $finish;
-  end
-  AXI4_Len lenOut = truncate (nFlits - 1);
-
-  // compute the target access size and check that it is less the maximum
-  // AXI4 len of 128 bytes (3'b111)
-  ///////////////////////////////////////////////////////////////////////
-  AXI4_Size sizeOut = sizeIn;
-  if (nBytes >= fromInteger (valueOf (newBusByteW)))
-    case (toAXI4_Size (fromInteger (valueOf (newBusByteW)))) matches
-      tagged Valid .x: sizeOut = x;
-      default: begin
-        $display ("error: impossible AXI4 size encountered");
-        $finish;
-      end
-    endcase
-
-  // if there was an overflow, fall back to original access prameters
-  // (this can only happen when going from a narrow to a wide bus)
-  ///////////////////////////////////////////////////////////////////
-  if (overflow != 0) begin
-    lenOut = lenIn;
-    sizeOut = sizeIn;
-  end
+  // a few assertions
+  ///////////////////
+  if (overflow == 0 && nFlits == 0)
+    die ($format ("error: encountered AXI4 transfer with 0 flits"));
+  if ((overflow != 0 && nFlits > 255) || nFlits > 256)
+    die ($format ("error: too long AXI4 transfer (>256 flits) encountered"));
+  if (!isPowerOf2 (valueOf (newBusByteW)))
+    die ($format ("desired bus width should be a power of 2"));
 
   // return results
   /////////////////
