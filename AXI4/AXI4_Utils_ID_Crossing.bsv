@@ -87,11 +87,14 @@ module mkAXI4IDNameSpaceCrossing
            , AXI4_Master #( id_Y, addr_, data_
                           , awuser_, wuser_, buser_, aruser_, ruser_ ) ))
   // constraints
-  provisos (Add #(_, TLog #(nbEntries), id_Y) );
+  provisos (Add #(_, TLog #(nbEntries), id_Y));
+  RegistrationTable #(Bit #(id_X), Bit #(id_Y))
+    idsTable <- mkRegistrationTable (proxyTableSz, proxyRegsCntSz);
+  RegistrationTable #(Bit #(id_X), Bit #(id_Y)) idTables[2] <- virtualize (idsTable, 2);
   match {.aw_X, .b_X, .aw_Y, .b_Y}
-    <- mkAXI4WritesIDNameSpaceCrossing (proxyTableSz, proxyRegsCntSz);
+    <- mkAXI4WritesIDNameSpaceCrossing (idTables[0]);
   match {.ar_X, .r_X, .ar_Y, .r_Y}
-    <- mkAXI4ReadsIDNameSpaceCrossing (proxyTableSz, proxyRegsCntSz);
+    <- mkAXI4ReadsIDNameSpaceCrossing (idTables[1]);
   let wff <- mkFIFOF;
   return tuple2 (
     interface AXI4_Slave;
@@ -112,21 +115,16 @@ endmodule
 
 module mkAXI4WritesIDNameSpaceCrossing
   // received parameters
-  #( parameter NumProxy #(nbEntries) proxyTableSz
-   , parameter NumProxy #(regsCntSz) proxyRegsCntSz )
+  #( RegistrationTable #(Bit #(id_X), Bit #(id_Y)) idsTable )
   // returned interface
   (Tuple4 #( Sink #(AXI4_AWFlit #(id_X, addr_, awuser_))
            , Source #(AXI4_BFlit #(id_X, buser_))
            , Source #(AXI4_AWFlit #(id_Y, addr_, awuser_))
-           , Sink #(AXI4_BFlit #(id_Y, buser_)) ))
-  // constraints
-  provisos (Add #(_, TLog #(nbEntries), id_Y) );
+           , Sink #(AXI4_BFlit #(id_Y, buser_)) ));
   let awff_X <- mkFIFOF;
   let bff_X  <- mkFIFOF;
   let awff_Y <- mkFIFOF;
   let bff_Y  <- mkFIFOF;
-  RegistrationTable #(Bit #(id_X), Bit #(id_Y))
-    idsTable <- mkRegistrationTable (proxyTableSz, proxyRegsCntSz);
   // handle requests
   rule req;
     AXI4_AWFlit #(id_X, addr_, awuser_) awflit_X = awff_X.first;
@@ -156,21 +154,16 @@ endmodule
 
 module mkAXI4ReadsIDNameSpaceCrossing
   // received parameters
-  #( parameter NumProxy #(nbEntries) proxyTableSz
-   , parameter NumProxy #(regsCntSz) proxyRegsCntSz )
+  #( RegistrationTable #(Bit #(id_X), Bit #(id_Y)) idsTable )
   // returned interface
   (Tuple4 #( Sink #(AXI4_ARFlit #(id_X, addr_, aruser_))
            , Source #(AXI4_RFlit #(id_X, data_, ruser_))
            , Source #(AXI4_ARFlit #(id_Y, addr_, aruser_))
-           , Sink #(AXI4_RFlit #(id_Y, data_, ruser_)) ))
-  // constraints
-  provisos (Add #(_, TLog #(nbEntries), id_Y) );
+           , Sink #(AXI4_RFlit #(id_Y, data_, ruser_)) ));
   let arff_X <- mkFIFOF;
   let rff_X  <- mkFIFOF;
   let arff_Y <- mkFIFOF;
   let rff_Y  <- mkFIFOF;
-  RegistrationTable #(Bit #(id_X), Bit #(id_Y))
-    idsTable <- mkRegistrationTable (proxyTableSz, proxyRegsCntSz);
   // handle requests
   rule req;
     AXI4_ARFlit #(id_X, addr_, aruser_) arflit_X = arff_X.first;
