@@ -46,6 +46,49 @@ import FIFOF :: *;
 import SpecialFIFOs :: *;
 import Connectable :: *;
 
+////////////////////////////////////
+// AXI4 single ID in-order master //
+////////////////////////////////////////////////////////////////////////////////
+
+module mkAXI4SingleIDMaster #(AXI4_Master #(idsz, b, c, d, e, f, g, h) m)
+                             (AXI4_Master #(idsz, b, c, d, e, f, g, h));
+  let awidff <- mkSizedFIFOF (valueOf (TExp #(idsz)));
+  let aridff <- mkSizedFIFOF (valueOf (TExp #(idsz)));
+  interface aw = interface Source;
+    method canPeek = m.aw.canPeek && awidff.notFull;
+    method peek if (m.aw.canPeek && awidff.notFull) =
+      mapAXI4_AWFlit_awid (constFn (0), m.aw.peek);
+    method drop if (m.aw.canPeek && awidff.notFull) = action
+      let awflit <- get (m.aw);
+      awidff.enq (awflit.awid);
+    endaction;
+  endinterface;
+  interface w = m.w;
+  interface b = interface Sink;
+    method canPut = m.b.canPut && awidff.notEmpty;
+    method put (bflit) if (m.b.canPut && awidff.notEmpty) = action
+      m.b.put (mapAXI4_BFlit_bid (constFn (awidff.first), bflit));
+      awidff.deq;
+    endaction;
+  endinterface;
+  interface ar = interface Source;
+    method canPeek = m.ar.canPeek && aridff.notFull;
+    method peek if (m.ar.canPeek && aridff.notFull) =
+      mapAXI4_ARFlit_arid (constFn (0), m.ar.peek);
+    method drop if (m.ar.canPeek && aridff.notFull) = action
+      let arflit <- get (m.ar);
+      aridff.enq (arflit.arid);
+    endaction;
+  endinterface;
+  interface r = interface Sink;
+    method canPut = m.r.canPut && aridff.notEmpty;
+    method put (rflit) if (m.r.canPut && aridff.notEmpty) = action
+      m.r.put (mapAXI4_RFlit_rid (constFn (aridff.first), rflit));
+      if (rflit.rlast) aridff.deq;
+    endaction;
+  endinterface;
+endmodule
+
 //////////////////
 // AXI4 Limiter //
 ////////////////////////////////////////////////////////////////////////////////
