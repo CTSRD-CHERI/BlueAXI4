@@ -52,8 +52,8 @@ import Connectable :: *;
 
 module mkAXI4SingleIDMaster #(AXI4_Master #(idsz, b, c, d, e, f, g, h) m)
                              (AXI4_Master #(idsz, b, c, d, e, f, g, h));
-  let awidff <- mkSizedFIFOF (valueOf (TExp #(idsz)));
-  let aridff <- mkSizedFIFOF (valueOf (TExp #(idsz)));
+  let awidff <- mkUGSizedFIFOF (valueOf (TExp #(idsz)));
+  let aridff <- mkUGSizedFIFOF (valueOf (TExp #(idsz)));
   interface aw = interface Source;
     method canPeek = m.aw.canPeek && awidff.notFull;
     method peek if (m.aw.canPeek && awidff.notFull) =
