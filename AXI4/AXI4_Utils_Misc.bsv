@@ -45,6 +45,7 @@ import BlueBasics :: *;
 import FIFOF :: *;
 import SpecialFIFOs :: *;
 import Connectable :: *;
+import Clocks :: *;
 
 ////////////////////////////////////
 // AXI4 single ID in-order master //
@@ -225,6 +226,197 @@ endmodule
 //////////////////////////////////////////
 // AXI4 Burst Master <-> NonBurst Slave //
 ////////////////////////////////////////////////////////////////////////////////
+
+// helper functions
+function Bit #(addr_) getFlitAddr ( Bit #(addr_) addr
+                                  , AXI4_Size size
+                                  , AXI4_Burst burst
+                                  , Bit #(SizeOf #(AXI4_Len)) cnt )
+  provisos (Add #(_a, SizeOf #(AXI4_Len), addr_)) = case (burst)
+  INCR: return addr + (zeroExtend(cnt) << pack(size));
+  default: return addr;
+endcase;
+
+module mkAXI4WritesDeBurst
+  (Tuple6 #( Sink #(AXI4_AWFlit #(id_, addr_, awuser_))
+           , Sink #(AXI4_WFlit #(data_, wuser_))
+           , Source #(AXI4_BFlit #(id_, buser_))
+           , Source #(AXI4_AWFlit #(id_, addr_, awuser_))
+           , Source #(AXI4_WFlit #(data_, wuser_))
+           , Sink #(AXI4_BFlit #(id_, buser_)) ))
+  provisos (Add #(_a, SizeOf #(AXI4_Len), addr_));
+
+  Bool debug = False;
+  let   awffIn <- mkFIFOF;
+  let    wffIn <- mkFIFOF;
+  let    bffIn <- mkFIFOF;
+  let  awffOut <- mkFIFOF;
+  let   wffOut <- mkFIFOF;
+  let   bffOut <- mkFIFOF;
+  let rspCntff <- mkSizedFIFOF (4);
+  Reg#(Bit#(SizeOf#(AXI4_Len))) writesSent[2] <- mkCReg(2, 0);
+  let defaultBResp = AXI4_BFlit {bid: ?, bresp: EXOKAY, buser: ?};
+  Reg#(Tuple2#(Bit#(TAdd#(SizeOf#(AXI4_Len), 1)), AXI4_BFlit #(id_, buser_))) flitReceived[3] <- mkCReg(3, tuple2(0, defaultBResp));
+
+  rule forward_write_req;
+    // prepare new AW request flit
+    AXI4_AWFlit #(id_, addr_, awuser_) awflit = awffIn.first;
+    let newawflit = awflit;
+    newawflit.awaddr = getFlitAddr ( awflit.awaddr
+                                   , awflit.awsize
+                                   , awflit.awburst
+                                   , writesSent[0] );
+    newawflit.awlen = 0;
+    newawflit.awburst = FIXED;
+    // prepare new W request flit
+    AXI4_WFlit #(data_, wuser_) newwflit <- get (wffIn);
+    newwflit.wlast = True;
+    // produce a AW/W output
+    awffOut.enq (newawflit);
+    wffOut.enq (newwflit);
+    // book keeping
+    if (wffIn.first.wlast) begin
+      awffIn.deq;
+      rspCntff.enq (awflit.awlen);
+      writesSent[0] <= 0;
+    end else writesSent[0] <= writesSent[0] + 1;
+    // DEBUG //
+    if (debug) $display("%0t: forward_write_req", $time,
+                        "\n", fshow(awflit), "\n", fshow(wffIn.first),
+                        "\n", fshow(newawflit), "\n", fshow(newwflit));
+  endrule
+
+  rule consume_bresp;
+    // always consume the response and save the "aggregated" response
+    bffOut.deq;
+    // combine the old and new response, keeping the "lower" bresp value of the
+    // two, and for the other fields use the new response's values
+    // The ordering of bresp values used here is EXOKAY > OKAY > DECERR > SLVERR
+    function AXI4_BFlit #(a, f) combine_bresp
+      (AXI4_BFlit #(a, f) bflit_a, AXI4_BFlit #(a, f) bflit_b) =
+      case (tuple2 (bflit_a.bresp, bflit_b.bresp)) matches
+        {EXOKAY, .x}: bflit_b;
+        {OKAY,   .x} &&& (x != EXOKAY): bflit_b;
+        {DECERR, .x} &&& (x != EXOKAY && x != OKAY): bflit_b;
+        // in all other cases, including when bflit_a.bresp is SLVERR, we return
+        // bflit_a.bresp but with corrected id and user fields
+        default: AXI4_BFlit { bid   : bflit_b.bid
+                            , bresp : bflit_a.bresp
+                            , buser : bflit_b.buser };
+      endcase;
+    flitReceived[0] <= tuple2 ( tpl_1 (flitReceived[0]) + 1
+                              , combine_bresp ( tpl_2 (flitReceived[0])
+                                              , bffOut.first ) );
+
+    // DEBUG //
+    if (debug) $display ("%0t: consume_bresp - ", $time, fshow (bffOut.first));
+  endrule
+
+  // on last response, forward the aggregated response and reset book keeping
+  rule produce_bresp
+    ( rspCntff.notEmpty
+      && tpl_1 (flitReceived[1]) > zeroExtend (rspCntff.first) );
+    flitReceived[1] <= tuple2 (0, defaultBResp);
+    rspCntff.deq;
+    bffIn.enq (tpl_2 (flitReceived[1]));
+
+    // DEBUG //
+    if (debug) $display ( "%0t: produce_bresp - "
+                        , $time, fshow (tpl_2 (flitReceived[1])) );
+  endrule
+
+  // return interface
+  return tuple6 ( toSink (awffIn), toSink (wffIn), toSource (bffIn)
+                , toSource (awffOut), toSource(wffOut), toSink (bffOut) );
+endmodule
+
+module mkAXI4ReadsDeBurst
+  (Tuple4 #( Sink #(AXI4_ARFlit #(id_, addr_, aruser_))
+           , Source #(AXI4_RFlit #(id_, data_, ruser_))
+           , Source #(AXI4_ARFlit #(id_, addr_, aruser_))
+           , Sink #(AXI4_RFlit #(id_, data_, ruser_)) ))
+  provisos (Add #(_a, SizeOf #(AXI4_Len), addr_));
+
+  Bool debug = False;
+  let   arffIn <- mkFIFOF;
+  let    rffIn <- mkFIFOF;
+  let  arffOut <- mkFIFOF;
+  let   rffOut <- mkFIFOF;
+  let lastReadRspFF <- mkSizedFIFOF (4);
+  Reg#(Bit#(SizeOf#(AXI4_Len))) readsSent[2] <- mkCReg(2, 0);
+
+  rule forward_read_req;
+    // prepare new request flit
+    AXI4_ARFlit #(id_, addr_, aruser_) arflit = arffIn.first;
+    AXI4_ARFlit #(id_, addr_, aruser_) newflit = arflit;
+    newflit.araddr = getFlitAddr ( arflit.araddr
+                                 , arflit.arsize
+                                 , arflit.arburst
+                                 , readsSent[0] );
+    newflit.arlen = 0;
+    newflit.arburst = FIXED;
+    // is this the last request ?
+    Bool isLast = (readsSent[0] == arflit.arlen);
+    // produce a AR output
+    arffOut.enq (newflit);
+    lastReadRspFF.enq (isLast);
+    // book keeping
+    if (isLast) begin
+      arffIn.deq;
+      readsSent[0] <= 0;
+    end else readsSent[0] <= readsSent[0] + 1;
+    // DEBUG //
+    if (debug) $display ( "%0t: forward_read_req", $time
+                        , "\n", fshow(arflit), "\n", fshow(newflit)
+                        , "\nisLast: ", fshow(isLast)
+                        , " readsSent: %0d", readsSent[0] );
+  endrule
+
+  rule forward_read_rsp;
+    // prepare new response flit
+    AXI4_RFlit #(id_, data_, ruser_) newflit = rffOut.first;
+    newflit.rlast <- get (lastReadRspFF);
+    // consume and produce on AXI
+    rffOut.deq;
+    rffIn.enq (newflit);
+    // DEBUG //
+    if (debug) $display("%0t: forward_read_rsp - ", $time, fshow (newflit));
+  endrule
+
+  // return interface
+  return tuple4 ( toSink (arffIn), toSource (rffIn)
+                , toSource (arffOut), toSink (rffOut) );
+endmodule
+
+module mkAXI4DeBurst (AXI4_Shim#(a, b, c, d, e, f, g, h))
+  provisos (Add #(_a, SizeOf #(AXI4_Len), b));
+  Clock curClk <- exposeCurrentClock;
+  Reset curRst <- exposeCurrentReset;
+  let clearRst <- mkReset (0, True, curClk, reset_by curRst);
+  Reset allRst <- mkResetEither (curRst, clearRst.new_rst);
+  match {.awIn, .wIn, .bIn, .awOut, .wOut, .bOut}
+    <- mkAXI4WritesDeBurst (reset_by allRst);
+  match {.arIn, .rIn, .arOut, .rOut}
+    <- mkAXI4ReadsDeBurst (reset_by allRst);
+  // Interface
+  method clear = action
+    clearRst.assertReset;
+  endaction;
+  interface slave = interface AXI4_Slave;
+      interface aw = awIn;
+      interface  w = wIn;
+      interface  b = bIn;
+      interface ar = arIn;
+      interface  r = rIn;
+  endinterface;
+  interface master = interface AXI4_Master;
+      interface aw = awOut;
+      interface  w = wOut;
+      interface  b = bOut;
+      interface ar = arOut;
+      interface  r = rOut;
+  endinterface;
+endmodule
 
 module mkBurstToNoBurst (AXI4_Shim#(a, b, c, d, e, f, g, h))
   provisos(Add#(a__, SizeOf#(AXI4_Len), b));
