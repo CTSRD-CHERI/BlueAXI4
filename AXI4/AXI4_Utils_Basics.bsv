@@ -116,25 +116,32 @@ endmodule
 // AXI4 Debug / Trace utils //
 ////////////////////////////////////////////////////////////////////////////////
 
-function AXI4_Master#(a,b,c,d,e,f,g,h)
-         debugAXI4_Master(AXI4_Master#(a,b,c,d,e,f,g,h) m, Fmt msg) =
+function AXI4_Master#(a,b,c,d,e,f,g,h) conditionalDebugAXI4_Master
+  (Bool p, AXI4_Master#(a,b,c,d,e,f,g,h) m, Fmt msg) =
   interface AXI4_Master;
-    interface aw = debugSource(m.aw, $format(msg, " aw"));
-    interface w  = debugSource( m.w, $format(msg, " w"));
-    interface b  = debugSink  ( m.b, $format(msg, " b"));
-    interface ar = debugSource(m.ar, $format(msg, " ar"));
-    interface r  = debugSink  ( m.r, $format(msg, " r"));
+    interface aw = conditionalDebugSource (p, m.aw, $format(msg, " aw"));
+    interface w  = conditionalDebugSource (p,  m.w, $format(msg, " w"));
+    interface b  = conditionalDebugSink   (p,  m.b, $format(msg, " b"));
+    interface ar = conditionalDebugSource (p, m.ar, $format(msg, " ar"));
+    interface r  = conditionalDebugSink   (p,  m.r, $format(msg, " r"));
+  endinterface;
+function AXI4_Master#(a,b,c,d,e,f,g,h) debugAXI4_Master
+  (AXI4_Master#(a,b,c,d,e,f,g,h) m, Fmt msg) =
+  conditionalDebugAXI4_Master (True, m, msg);
+
+function AXI4_Slave#(a,b,c,d,e,f,g,h) conditionalDebugAXI4_Slave
+  (Bool p, AXI4_Slave#(a,b,c,d,e,f,g,h) s, Fmt msg) =
+  interface AXI4_Slave;
+    interface aw = conditionalDebugSink   (p, s.aw, $format(msg, " aw"));
+    interface w  = conditionalDebugSink   (p,  s.w, $format(msg, " w"));
+    interface b  = conditionalDebugSource (p,  s.b, $format(msg, " b"));
+    interface ar = conditionalDebugSink   (p, s.ar, $format(msg, " ar"));
+    interface r  = conditionalDebugSource (p,  s.r, $format(msg, " r"));
   endinterface;
 
-function AXI4_Slave#(a,b,c,d,e,f,g,h)
-         debugAXI4_Slave(AXI4_Slave#(a,b,c,d,e,f,g,h) s, Fmt msg) =
-  interface AXI4_Slave;
-    interface aw = debugSink  (s.aw, $format(msg, " aw"));
-    interface w  = debugSink  ( s.w, $format(msg, " w"));
-    interface b  = debugSource( s.b, $format(msg, " b"));
-    interface ar = debugSink  (s.ar, $format(msg, " ar"));
-    interface r  = debugSource( s.r, $format(msg, " r"));
-  endinterface;
+function AXI4_Slave#(a,b,c,d,e,f,g,h) debugAXI4_Slave
+  (AXI4_Slave#(a,b,c,d,e,f,g,h) s, Fmt msg) =
+  conditionalDebugAXI4_Slave (True, s, msg);
 
 module mkAXI4DebugShim #(String debugTag) (AXI4_Shim#(a,b,c,d,e,f,g,h));
   let shim <- mkAXI4Shim;
