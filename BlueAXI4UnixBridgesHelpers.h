@@ -66,6 +66,7 @@
 // - PFX_serialize_flit (uint8_t* raw_flit, const void* flit)
 // - PFX_create_flit (const uint8_t* raw_flit)
 // - PFX_destroy_flit (t_axi4_<CHANNEL>flit* flit)
+// - PFX_fprint_flit (FILE* stream, const t_axi4_<CHANNEL>flit* flit)
 // - PFX_print_flit (const t_axi4_<CHANNEL>flit* flit)
 
 #include <stdint.h>
@@ -117,14 +118,14 @@ static inline void *bitmemcpy( void *destArg, const size_t destBitOffset
   return dest;
 }
 
-static inline void bitHexDump (const uint8_t* raw, size_t bitLen) {
+static inline void bitHexDump (FILE* f, const uint8_t* raw, size_t bitLen) {
   if (bitLen) {
-    printf ("0x");
+    fprintf (f, "0x");
     size_t remain = _MOD8(bitLen);
     size_t complete = _DIV8(bitLen);
-    if (remain) printf ("%02x", raw[complete] & _MASK8LO(remain));
-    for (int i = complete-1; i >= 0; i--) printf ("%02x", raw[i]);
-  } else printf ("x");
+    if (remain) fprintf (f, "%02x", raw[complete] & _MASK8LO(remain));
+    for (int i = complete-1; i >= 0; i--) fprintf (f, "%02x", raw[i]);
+  } else fprintf (f, "x");
 }
 
 // AXI4 flit types
@@ -500,24 +501,28 @@ void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,destroy_flit) \
   free (a ## x ## flit->a ## x ## user); \
   free (a ## x ## flit); \
 } \
+void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,fprint_flit) \
+  (FILE* f, const t_axi4_a ## x ## flit* flit) { \
+  fprintf (f, "axi4_a" #x "flit {"); \
+  fprintf (f, " a" #x "id: "); \
+  bitHexDump (f, flit->a ## x ## id, IDsz); \
+  fprintf (f, ", a" #x "addr: "); \
+  bitHexDump (f, flit->a ## x ## addr, ADDRsz); \
+  fprintf (f, ", a" #x "len: 0x%02x", flit->a ## x ## len & _LENmask); \
+  fprintf (f, ", a" #x "size: 0x%02x", flit->a ## x ## size & _SIZEmask); \
+  fprintf (f, ", a" #x "burst: 0x%02x", flit->a ## x ## burst & _BURSTmask); \
+  fprintf (f, ", a" #x "lock: 0x%02x", flit->a ## x ## lock & _LOCKmask); \
+  fprintf (f, ", a" #x "cache: 0x%02x", flit->a ## x ## cache & _CACHEmask); \
+  fprintf (f, ", a" #x "prot: 0x%02x", flit->a ## x ## prot & _PROTmask); \
+  fprintf (f, ", a" #x "qos: 0x%02x", flit->a ## x ## qos & _QOSmask); \
+  fprintf (f, ", a" #x "region: 0x%02x", flit->a ## x ## region & _REGIONmask); \
+  fprintf (f, ", a" #x "user: "); \
+  bitHexDump (f, flit->a ## x ## user, AxUSERsz); \
+  fprintf (f, " }"); \
+} \
 void _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,print_flit) \
   (const t_axi4_a ## x ## flit* flit) { \
-  printf ("axi4_a" #x "flit {"); \
-  printf (" a" #x "id: "); \
-  bitHexDump (flit->a ## x ## id, IDsz); \
-  printf (", a" #x "addr: "); \
-  bitHexDump (flit->a ## x ## addr, ADDRsz); \
-  printf (", a" #x "len: 0x%02x", flit->a ## x ## len & _LENmask); \
-  printf (", a" #x "size: 0x%02x", flit->a ## x ## size & _SIZEmask); \
-  printf (", a" #x "burst: 0x%02x", flit->a ## x ## burst & _BURSTmask); \
-  printf (", a" #x "lock: 0x%02x", flit->a ## x ## lock & _LOCKmask); \
-  printf (", a" #x "cache: 0x%02x", flit->a ## x ## cache & _CACHEmask); \
-  printf (", a" #x "prot: 0x%02x", flit->a ## x ## prot & _PROTmask); \
-  printf (", a" #x "qos: 0x%02x", flit->a ## x ## qos & _QOSmask); \
-  printf (", a" #x "region: 0x%02x", flit->a ## x ## region & _REGIONmask); \
-  printf (", a" #x "user: "); \
-  bitHexDump (flit->a ## x ## user, AxUSERsz); \
-  printf (" }"); \
+  _AXI4_Ax_PFX(x,IDsz,ADDRsz,AxUSERsz,defId,fprint_flit) (stdout, flit); \
 }
 
 // AWFlits //
@@ -661,16 +666,20 @@ void AXI4_W_(DATAsz,WUSERsz,defId,destroy_flit) (t_axi4_wflit* wflit) { \
   free (wflit->wuser); \
   free (wflit); \
 } \
+void AXI4_W_(DATAsz,WUSERsz,defId,fprint_flit) \
+  (FILE* f, const t_axi4_wflit* flit) { \
+  fprintf (f, "axi4_wflit {"); \
+  fprintf (f, " wdata: "); \
+  bitHexDump (f, flit->wdata, DATAsz); \
+  fprintf (f, ", wstrb: "); \
+  bitHexDump (f, flit->wstrb, _DIV8CEIL(DATAsz)); \
+  fprintf (f, ", wlast: 0x%02x", flit->wlast & _LASTmask); \
+  fprintf (f, ", wuser: "); \
+  bitHexDump (f, flit->wuser, WUSERsz); \
+  fprintf (f, " }"); \
+} \
 void AXI4_W_(DATAsz,WUSERsz,defId,print_flit) (const t_axi4_wflit* flit) { \
-  printf ("axi4_wflit {"); \
-  printf (" wdata: "); \
-  bitHexDump (flit->wdata, DATAsz); \
-  printf (", wstrb: "); \
-  bitHexDump (flit->wstrb, _DIV8CEIL(DATAsz)); \
-  printf (", wlast: 0x%02x", flit->wlast & _LASTmask); \
-  printf (", wuser: "); \
-  bitHexDump (flit->wuser, WUSERsz); \
-  printf (" }"); \
+  AXI4_W_(DATAsz,WUSERsz,defId,fprint_flit) (stdout, flit); \
 }
 
 // BFlits //
@@ -769,14 +778,18 @@ void AXI4_B_(IDsz,BUSERsz,defId,destroy_flit) (t_axi4_bflit* bflit) { \
   free (bflit->buser); \
   free (bflit); \
 } \
+void AXI4_B_(IDsz,BUSERsz,defId,fprint_flit) \
+  (FILE* f, const t_axi4_bflit* flit) { \
+  fprintf (f, "axi4_bflit {"); \
+  fprintf (f, " bid: "); \
+  bitHexDump (f, flit->bid, IDsz); \
+  fprintf (f, ", bresp: 0x%02x", flit->bresp & _RESPmask); \
+  fprintf (f, ", buser: "); \
+  bitHexDump (f, flit->buser, BUSERsz); \
+  fprintf (f, " }"); \
+} \
 void AXI4_B_(IDsz,BUSERsz,defId,print_flit) (const t_axi4_bflit* flit) { \
-  printf ("axi4_bflit {"); \
-  printf (" bid: "); \
-  bitHexDump (flit->bid, IDsz); \
-  printf (", bresp: 0x%02x", flit->bresp & _RESPmask); \
-  printf (", buser: "); \
-  bitHexDump (flit->buser, BUSERsz); \
-  printf (" }"); \
+  AXI4_B_(IDsz,BUSERsz,defId,fprint_flit) (stdout, flit);\
 }
 
 // ARFlits //
@@ -938,18 +951,22 @@ void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,destroy_flit) (t_axi4_rflit* rflit) { \
   free (rflit->ruser); \
   free (rflit); \
 } \
+void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,fprint_flit) \
+  (FILE* f, const t_axi4_rflit* flit) { \
+  fprintf (f, "axi4_rflit {"); \
+  fprintf (f, " rid: "); \
+  bitHexDump (f, flit->rid, IDsz); \
+  fprintf (f, ", rdata: "); \
+  bitHexDump (f, flit->rdata, DATAsz); \
+  fprintf (f, ", rresp: 0x%02x", flit->rresp & _RESPmask); \
+  fprintf (f, ", rlast: 0x%02x", flit->rlast & _LASTmask); \
+  fprintf (f, ", ruser: "); \
+  bitHexDump (f, flit->ruser, RUSERsz); \
+  fprintf (f, " }"); \
+} \
 void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,print_flit) \
   (const t_axi4_rflit* flit) { \
-  printf ("axi4_rflit {"); \
-  printf (" rid: "); \
-  bitHexDump (flit->rid, IDsz); \
-  printf (", rdata: "); \
-  bitHexDump (flit->rdata, DATAsz); \
-  printf (", rresp: 0x%02x", flit->rresp & _RESPmask); \
-  printf (", rlast: 0x%02x", flit->rlast & _LASTmask); \
-  printf (", ruser: "); \
-  bitHexDump (flit->ruser, RUSERsz); \
-  printf (" }"); \
+  AXI4_R_(IDsz,DATAsz,RUSERsz,defId,fprint_flit) (stdout, flit);\
 }
 
 // AXI4 fully parameterized definitions
