@@ -665,7 +665,7 @@ void AXI4_W_(DATAsz,WUSERsz,defId,print_flit) (const t_axi4_wflit* flit) { \
   printf ("axi4_wflit {"); \
   printf (" wdata: "); \
   bitHexDump (flit->wdata, DATAsz); \
-  printf (" wstrb: "); \
+  printf (", wstrb: "); \
   bitHexDump (flit->wstrb, _DIV8CEIL(DATAsz)); \
   printf (", wlast: 0x%02x", flit->wlast & _LASTmask); \
   printf (", wuser: "); \
@@ -943,7 +943,7 @@ void AXI4_R_(IDsz,DATAsz,RUSERsz,defId,print_flit) \
   printf ("axi4_rflit {"); \
   printf (" rid: "); \
   bitHexDump (flit->rid, IDsz); \
-  printf (" rdata: "); \
+  printf (", rdata: "); \
   bitHexDump (flit->rdata, DATAsz); \
   printf (", rresp: 0x%02x", flit->rresp & _RESPmask); \
   printf (", rlast: 0x%02x", flit->rlast & _LASTmask); \
