@@ -526,7 +526,7 @@ module mkAXI4ReadsWideToNarrow
     Bit #(out_bit_idx_t)  loOutBit = truncate (loInBit);
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //tmpData[hiInBit:loInBit] = rflitOut.rdata[hiOutBit:loOutBit];
-    Bit #(in_byte_t) msk = ~(~0 << width) << loIn;
+    Bit #(in_byte_t) msk = ~(~0 << valueOf(out_byte_t)) << loIn;
     Bit #(out_bit_t) tmpDataOut = rflitOut.rdata >> loOutBit;
     Bit #(in_bit_t) tmpDataIn = zeroExtend (tmpDataOut) << loInBit;
     Bit #(in_bit_t) newData = mergeWithBE (msk, data, tmpDataIn);
