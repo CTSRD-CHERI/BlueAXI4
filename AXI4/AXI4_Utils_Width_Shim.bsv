@@ -253,8 +253,6 @@ function ActionValue #(AccessParams)
 
 endactionvalue;
 
-function Bit #(m) align (Integer n, Bit #(m) x) = x & ((~0) << n);
-
 // Convert wide writes to narrow writes
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -338,8 +336,7 @@ module mkAXI4WritesWideToNarrow
     vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.aw_send, "
                        , "awflitOut ", fshow (awflitOut) ));
     // pass local information to the data channel handling rule
-    let reqffpayload = tuple4 ( align ( valueOf (out_byte_idx_t)
-                                      , awflitIn.awaddr)
+    let reqffpayload = tuple4 ( awflitIn.awaddr
                               , nBytes
                               , awlenOut
                               , awsizeOut );
@@ -357,14 +354,16 @@ module mkAXI4WritesWideToNarrow
     let reqffpayload = reqff.first;
     vPrint (3, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
                        , "reqffpayload ", fshow (reqffpayload) ));
-    match {.addrAlign, .nBytes, .lenOut, .sizeOut} = reqffpayload;
+    match {.addr, .nBytes, .lenOut, .sizeOut} = reqffpayload;
+    let shiftAmt = valueOf(TLog#(out_byte_t));
+    addr = (addr >> shiftAmt) << shiftAmt;
     // read current incoming data flit
     let wflitIn = wffIn.first;
     vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
                        , "wflitIn ", fshow (wflitIn) ));
     // derive the new outgoing data flit
     Bit #(in_byte_idx_t) width = 1 << pack (sizeOut);
-    Bit #(in_byte_idx_t) loOut = truncate (addrAlign) + truncate (cnt);
+    Bit #(in_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(in_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //reqDataOut = wffIn.wdata[hiOutBit:loOutBit];
@@ -493,10 +492,7 @@ module mkAXI4ReadsWideToNarrow
     vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
                        , "arflitOut ", fshow (arflitOut) ));
     // pass local information to the data channel handling rule
-    t_local localpayload = tuple3 ( align ( valueOf (out_byte_idx_t)
-                                          , arflitIn.araddr )
-                                  , nBytes
-                                  , arsizeOut );
+    t_local localpayload = tuple3 (arflitIn.araddr, nBytes, arsizeOut);
     localff[arflitIn.arid].enq (localpayload);
     vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
                        , "localpayload ", fshow (localpayload) ));
@@ -513,14 +509,14 @@ module mkAXI4ReadsWideToNarrow
     vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                        , "localff[rflitOut.rid].first "
                        , fshow (localff[rflitOut.rid].first) ));
-    match {.addrAlign, .nBytes, .sizeOut} = localff[rflitOut.rid].first;
+    match {.addr, .nBytes, .sizeOut} = localff[rflitOut.rid].first;
     // read and consume incoming data response flit
     rffOut.deq;
     vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                        , "rflitOut ", fshow (rflitOut) ));
     // accumulate the data and book-keep
     Bit #(in_byte_idx_t)     width = 1 << pack (sizeOut);
-    Bit #(in_byte_idx_t)      loIn = truncate (addrAlign) + truncate (cnt);
+    Bit #(in_byte_idx_t)      loIn = truncate (addr) + truncate (cnt);
     Bit #(out_byte_idx_t)    loOut = truncate (loIn);
     Bit #(in_bit_idx_t)    loInBit = zeroExtend (loIn) << 3;
     Bit #(out_bit_idx_t)  loOutBit = truncate (loInBit);
@@ -655,9 +651,7 @@ module mkAXI4WritesNarrowToWide
     vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.aw_send, "
                        , "awflitOut ", fshow (awflitOut) ));
     // pass local information to the data channel handling rule
-    let reqffpayload = tuple6 ( nBytes
-                              , align ( valueOf (in_byte_idx_t)
-                                      , awflitIn.awaddr )
+    let reqffpayload = tuple6 ( nBytes, awflitIn.awaddr
                               , awflitIn.awsize, awflitIn.awlen
                               , awsizeOut, awlenOut );
     reqff.enq (reqffpayload);
@@ -676,7 +670,7 @@ module mkAXI4WritesNarrowToWide
     // read current local information
     vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
                        , "reqff.first ", fshow (reqff.first) ));
-    match {.nBytes, .addrAlign, .awsizeIn, .awlenIn, .awsizeOut, .awlenOut} =
+    match {.nBytes, .addr, .awsizeIn, .awlenIn, .awsizeOut, .awlenOut} =
       reqff.first;
     // consume incoming data flit
     let wflitIn <- get (wffIn);
@@ -684,7 +678,7 @@ module mkAXI4WritesNarrowToWide
                        , "wflitIn ", fshow (wflitIn) ));
     // derive the relevant data indices
     Bit #(out_byte_idx_t) width = 1 << pack (awsizeIn);
-    Bit #(out_byte_idx_t) loOut = truncate (addrAlign) + truncate (cnt);
+    Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(in_byte_idx_t) loIn = truncate (loOut);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
@@ -840,8 +834,7 @@ module mkAXI4ReadsNarrowToWide
                        , "arflitOut ", fshow (arflitOut) ));
     // pass local information to the data channel handling rule
     let localffpayload = tuple4 ( nBytes
-                                , align ( valueOf (in_byte_idx_t)
-                                        , arflitIn.araddr )
+                                , arflitIn.araddr
                                 , arflitIn.arsize
                                 , arflitIn.arlen );
     localff[arflitIn.arid].enq (localffpayload);
@@ -855,7 +848,7 @@ module mkAXI4ReadsNarrowToWide
   Reg #(Bit #(MaxBytesSz)) cnt <- mkReg (0);
   let rflitOut = rffOut.first;
   let localffpayload = localff[rflitOut.rid].first;
-  match {.nBytes, .addrAlign, .arsize, .arlen} = localffpayload;
+  match {.nBytes, .addr, .arsize, .arlen} = localffpayload;
   rule r_accumulate_send (localff[rflitOut.rid].notEmpty);
     vPrint (1, $format ("%m.mkAXI4ReadsNarrowToWide.r_accumulate_send"));
     // read current local information
@@ -867,7 +860,7 @@ module mkAXI4ReadsNarrowToWide
                        , "rflitOut ", fshow (rflitOut) ));
     // accumulate the data and book-keep
     Bit #(out_byte_idx_t) width = 1 << pack (arsize);
-    Bit #(out_byte_idx_t) loOut = truncate (addrAlign) + truncate (cnt);
+    Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
     Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
