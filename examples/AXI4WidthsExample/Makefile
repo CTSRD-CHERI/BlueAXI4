@@ -15,14 +15,18 @@ BSCFLAGS += -bdir $(BDIR)
 BSCFLAGS += -simdir $(SIMDIR)
 BSCFLAGS += -suppress-warnings T0127:S0080 # no orphan typeclass warning
 
-all: AXI4WidthsExample
+all: AXI4ReadWidthsExample AXI4WriteWidthsExample
 
 $(SIMDIR):
 	mkdir -p $(BDIR) $(SIMDIR)
 
-AXI4WidthsExample: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
-	$(BSC) $(BSCFLAGS) -sim -g testAXI4Widths -u $<
-	$(BSC) $(BSCFLAGS) -sim -e testAXI4Widths -Xl $(SIMDIR)/MemSim.o -o $@
+AXI4ReadWidthsExample: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
+	$(BSC) $(BSCFLAGS) -sim -g testAXI4ReadWidths -u $<
+	$(BSC) $(BSCFLAGS) -sim -e testAXI4ReadWidths -Xl $(SIMDIR)/MemSim.o -o $@
+
+AXI4WriteWidthsExample: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
+	$(BSC) $(BSCFLAGS) -sim -g testAXI4WriteWidths -u $<
+	$(BSC) $(BSCFLAGS) -sim -e testAXI4WriteWidths -Xl $(SIMDIR)/MemSim.o -o $@
 
 $(SIMDIR)/MemSim.o: $(BLUEUTILSDIR)/MemSim.c
 	$(CC) $(CCFLAGS) -c -o $@ $<
@@ -32,6 +36,6 @@ CCFLAGS = -O3  -Wall -Wno-unused -D_FILE_OFFSET_BITS=64 -fPIC
 .PHONY: clean
 
 clean:
-	rm -f AXI4WidthsExample
-	rm -f AXI4WidthsExample.bo
+	rm -f AXI4*WidthsExample
+	rm -f AXI4*WidthsExample.so
 	rm -rf $(BUILDDIR)
