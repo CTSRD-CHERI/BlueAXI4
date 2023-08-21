@@ -280,12 +280,14 @@ module mkAXI4WritesWideToNarrow
            , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
            , Add #(_a, out_bit_t, in_bit_t)
-           , Add #(_b, out_byte_t, in_byte_t)
-           , Add #(_c, in_byte_idx_t, in_bit_idx_t)
-           , Add #(_d, out_byte_idx_t, MaxBytesSz)
-           , Add #(_e, in_byte_idx_t, MaxBytesSz)
-           , Add #(_f, in_byte_idx_t, addr_)
-           , Add #(_g, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           , Add #(_b, out_bit_idx_t, in_bit_idx_t)
+           , Add #(_c, out_byte_t, in_byte_t)
+           , Add #(_d, out_byte_idx_t, in_byte_idx_t)
+           , Add #(_e, in_byte_idx_t, in_bit_idx_t)
+           , Add #(_f, out_byte_idx_t, MaxBytesSz)
+           , Add #(_g, in_byte_idx_t, MaxBytesSz)
+           , Add #(_h, in_byte_idx_t, addr_)
+           , Add #(_i, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
            );
 
   // local declarations
@@ -362,7 +364,9 @@ module mkAXI4WritesWideToNarrow
     // derive the new outgoing data flit
     Bit #(in_byte_idx_t) width = 1 << pack (sizeOut);
     Bit #(in_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
+    Bit #(out_byte_idx_t) loIn = truncate (loOut);
     Bit #(in_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
+    Bit #(out_bit_idx_t) loInBit = truncate (loOutBit);
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //reqDataOut = wffIn.wdata[hiOutBit:loOutBit];
     Bit #(out_bit_t) reqDataOut = truncate (wflitIn.wdata >> loOutBit);
@@ -370,8 +374,8 @@ module mkAXI4WritesWideToNarrow
     // did we reach the last flit
     Bool isLast = newCnt >= nBytes;
     AXI4_WFlit #(out_bit_t, wuser_) wflitOut = AXI4_WFlit {
-        wdata: reqDataOut
-      , wstrb: reqStrbOut
+        wdata: reqDataOut << loInBit
+      , wstrb: reqStrbOut << loIn
       , wlast: isLast
       , wuser: wflitIn.wuser };
     // send the outgoing data flit
@@ -863,13 +867,12 @@ module mkAXI4ReadsNarrowToWide
     Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
     Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
     //rspData[hiInBit:loInBit] = rflitOut.rdata[hiOutBit:loOutBit];
-    Bit #(out_bit_t) rspDataOut = rflitOut.rdata >> loOutBit;
-    Bit #(in_bit_t) rspDataIn = truncate (rspDataOut << loInBit);
+    Bit #(in_bit_t) rspDataOut = truncate (rflitOut.rdata >> loOutBit);
     // did we reach the last flit
     Bool isLast = newCnt == nBytes;
     // push a response
     let rflitIn = AXI4_RFlit { rid: rflitOut.rid
-                             , rdata: rspDataIn
+                             , rdata: rspDataOut << loInBit
                              , rresp: rflitOut.rresp
                              , rlast: isLast
                              , ruser: rflitOut.ruser };
