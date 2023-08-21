@@ -355,8 +355,6 @@ module mkAXI4WritesWideToNarrow
     vPrint (3, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
                        , "reqffpayload ", fshow (reqffpayload) ));
     match {.addr, .nBytes, .lenOut, .sizeOut} = reqffpayload;
-    let shiftAmt = valueOf(TLog#(out_byte_t));
-    addr = (addr >> shiftAmt) << shiftAmt;
     // read current incoming data flit
     let wflitIn = wffIn.first;
     vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.w_send, "
