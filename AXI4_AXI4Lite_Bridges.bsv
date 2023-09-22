@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2018-2022 Alexandre Joannou
+ * Copyright (c) 2018-2023 Alexandre Joannou
  * Copyright (c) 2021 Ivan Ribeiro
  * All rights reserved.
  *
@@ -29,12 +29,14 @@
  * @BERI_LICENSE_HEADER_END@
  */
 
-import FIFO              :: *;
-import Connectable       :: *;
-import SourceSink        :: *;
-import AXI4_Types        :: *;
-import AXI4Lite_Types    :: *;
-import AXI4_Common_Types :: *;
+import FIFO                :: *;
+import FIFOF               :: *;
+import Connectable         :: *;
+import SourceSink          :: *;
+import AXI4_Types          :: *;
+import AXI4Lite_Types      :: *;
+import AXI4_Common_Types   :: *;
+import AXI4_Channels_Utils :: *;
 
 // die helper
 function Action die (Fmt m) = action
@@ -433,3 +435,63 @@ function (AXI4_Slave #( id_, addr_, data_
   interface  r = onDrop ( checkAXI4_RFlit (True)
                         , mapSource (fromAXI4Lite_R (0), sLite.r) );
 endinterface;
+
+
+module mkAXI4LiteToAXI4_Slave #( AXI4Lite_Slave #( addr_, data_
+                                                 , awuser_, wuser_, buser_
+                                                 , aruser_, ruser_) sLite)
+                               (AXI4_Slave #( id_, addr_, data_
+                                            , awuser_, wuser_, buser_
+                                            , aruser_, ruser_));
+
+  AXI4_Slave #(id_, addr_, data_, awuser_, wuser_, buser_, aruser_, ruser_) s =
+    fromAXI4LiteToAXI4_Slave (sLite);
+
+  FIFOF #(Bit #(id_)) ff_writeID <- mkFIFOF;
+  FIFOF #(Bit #(id_)) ff_readID <- mkFIFOF;
+
+  function AXI4_AWFlit #(id_, addr_, awuser_)
+    legalizeAW (AXI4_AWFlit #(id_, addr_, awuser_) x);
+    AXI4_AWFlit #(id_, addr_, awuser_) res = dfltAW;
+    res.awaddr = x.awaddr;
+    res.awprot = x.awprot;
+    res.awuser = x.awuser;
+    return res;
+  endfunction
+
+  function AXI4_ARFlit #(id_, addr_, aruser_)
+    legalizeAR (AXI4_ARFlit #(id_, addr_, aruser_) x);
+    AXI4_ARFlit #(id_, addr_, aruser_) res = dfltAR;
+    res.araddr = x.araddr;
+    res.arprot = x.arprot;
+    res.aruser = x.aruser;
+    return res;
+  endfunction
+
+  interface aw = interface Sink;
+    method canPut = s.aw.canPut && ff_writeID.notFull;
+    method put (x) = action
+      s.aw.put (legalizeAW (x));
+      ff_writeID.enq (x.awid);
+    endaction;
+  endinterface;
+  interface w = s.w;
+  interface b = interface Source;
+    method canPeek = s.b.canPeek && ff_writeID.notEmpty;
+    method peek = mapAXI4_BFlit_bid (constFn (ff_writeID.first), s.b.peek);
+    method drop = action s.b.drop; ff_writeID.deq; endaction;
+  endinterface;
+  interface ar = interface Sink;
+    method canPut = s.ar.canPut && ff_writeID.notFull;
+    method put (x) = action
+      s.ar.put (legalizeAR (x));
+      ff_readID.enq (x.arid);
+    endaction;
+  endinterface;
+  interface r = interface Source;
+    method canPeek = s.r.canPeek && ff_readID.notEmpty;
+    method peek = mapAXI4_RFlit_rid (constFn (ff_readID.first), s.r.peek);
+    method drop = action s.r.drop; ff_readID.deq; endaction;
+  endinterface;
+
+ endmodule
