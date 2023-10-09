@@ -46,6 +46,66 @@ import BlueBasics :: *;
 // AXI4 map utilities //
 ////////////////////////////////////////////////////////////////////////////////
 
+function AXI4_Master #(a, b, c, d_out, e, f, g, h)
+  mapAXI4_Master_AW (
+    function AXI4_AWFlit #(a, b, d_out) fAW (AXI4_AWFlit #(a, b, d) x)
+  , AXI4_Master #(a, b, c, d, e, f, g, h) m
+  ) = interface AXI4_Master;
+    interface aw = mapSource (fAW, m.aw);
+    interface  w = m.w;
+    interface  b = m.b;
+    interface ar = m.ar;
+    interface  r = m.r;
+  endinterface;
+
+function AXI4_Master #(a, b, c, d, e_out, f, g, h)
+  mapAXI4_Master_W (
+    function AXI4_WFlit #(c, e_out) fW (AXI4_WFlit #(c, e) x)
+  , AXI4_Master #(a, b, c, d, e, f, g, h) m
+  ) = interface AXI4_Master;
+    interface aw = m.aw;
+    interface  w = mapSource (fW, m.w);
+    interface  b = m.b;
+    interface ar = m.ar;
+    interface  r = m.r;
+  endinterface;
+
+function AXI4_Master #(a, b, c, d, e, f_out, g, h)
+  mapAXI4_Master_B (
+    function AXI4_BFlit #(a, f) fB (AXI4_BFlit #(a, f_out) x)
+  , AXI4_Master #(a, b, c, d, e, f, g, h) m
+  ) = interface AXI4_Master;
+    interface aw = m.aw;
+    interface  w = m.w;
+    interface  b = mapSink (fB, m.b);
+    interface ar = m.ar;
+    interface  r = m.r;
+  endinterface;
+
+function AXI4_Master #(a, b, c, d, e, f, g_out, h)
+  mapAXI4_Master_AR (
+    function AXI4_ARFlit #(a, b, g_out) fAR (AXI4_ARFlit #(a, b, g) x)
+  , AXI4_Master #(a, b, c, d, e, f, g, h) m
+  ) = interface AXI4_Master;
+    interface aw = m.aw;
+    interface  w = m.w;
+    interface  b = m.b;
+    interface ar = mapSource (fAR, m.ar);
+    interface  r = m.r;
+  endinterface;
+
+function AXI4_Master #(a, b, c, d, e, f, g, h_out)
+  mapAXI4_Master_R (
+    function AXI4_RFlit #(a, c, h) fR (AXI4_RFlit #(a, c, h_out) x)
+  , AXI4_Master #(a, b, c, d, e, f, g, h) m
+  ) = interface AXI4_Master;
+    interface aw = m.aw;
+    interface  w = m.w;
+    interface  b = m.b;
+    interface ar = m.ar;
+    interface  r = mapSink(fR, m.r);
+  endinterface;
+
 function AXI4_Master #(id_out, b, c, d, e, f, g, h)
   mapAXI4_Master_id ( function Bit #(id_out) fReq (Bit #(id_in)  x)
                     , function Bit #(id_in)  fRsp (Bit #(id_out) x)
@@ -85,6 +145,66 @@ function AXI4_Master #(a, b, c, d_, e_, f_, g_, h_)
   endinterface;
 
 //------------------------------------------------------------------------------
+
+function AXI4_Slave #(a, b, c, d_out, e, f, g, h)
+  mapAXI4_Slave_AW (
+    function AXI4_AWFlit #(a, b, d) fAW (AXI4_AWFlit #(a, b, d_out) x)
+  , AXI4_Slave #(a, b, c, d, e, f, g, h) m
+  ) = interface AXI4_Slave;
+    interface aw = mapSink (fAW, m.aw);
+    interface  w = m.w;
+    interface  b = m.b;
+    interface ar = m.ar;
+    interface  r = m.r;
+  endinterface;
+
+function AXI4_Slave #(a, b, c, d, e_out, f, g, h)
+  mapAXI4_Slave_W (
+    function AXI4_WFlit #(c, e) fW (AXI4_WFlit #(c, e_out) x)
+  , AXI4_Slave #(a, b, c, d, e, f, g, h) m
+  ) = interface AXI4_Slave;
+    interface aw = m.aw;
+    interface  w = mapSink (fW, m.w);
+    interface  b = m.b;
+    interface ar = m.ar;
+    interface  r = m.r;
+  endinterface;
+
+function AXI4_Slave #(a, b, c, d, e, f_out, g, h)
+  mapAXI4_Slave_B (
+    function AXI4_BFlit #(a, f_out) fB (AXI4_BFlit #(a, f) x)
+  , AXI4_Slave #(a, b, c, d, e, f, g, h) m
+  ) = interface AXI4_Slave;
+    interface aw = m.aw;
+    interface  w = m.w;
+    interface  b = mapSource (fB, m.b);
+    interface ar = m.ar;
+    interface  r = m.r;
+  endinterface;
+
+function AXI4_Slave #(a, b, c, d, e, f, g_out, h)
+  mapAXI4_Slave_AR (
+    function AXI4_ARFlit #(a, b, g) fAR (AXI4_ARFlit #(a, b, g_out) x)
+  , AXI4_Slave #(a, b, c, d, e, f, g, h) m
+  ) = interface AXI4_Slave;
+    interface aw = m.aw;
+    interface  w = m.w;
+    interface  b = m.b;
+    interface ar = mapSink (fAR, m.ar);
+    interface  r = m.r;
+  endinterface;
+
+function AXI4_Slave #(a, b, c, d, e, f, g, h_out)
+  mapAXI4_Slave_R (
+    function AXI4_RFlit #(a, c, h_out) fR (AXI4_RFlit #(a, c, h) x)
+  , AXI4_Slave #(a, b, c, d, e, f, g, h) m
+  ) = interface AXI4_Slave;
+    interface aw = m.aw;
+    interface  w = m.w;
+    interface  b = m.b;
+    interface ar = m.ar;
+    interface  r = mapSource (fR, m.r);
+  endinterface;
 
 function AXI4_Slave #(id_in, b, c, d, e, f, g, h)
   mapAXI4_Slave_id ( function Bit #(id_out) fReq (Bit #(id_in)  x)
