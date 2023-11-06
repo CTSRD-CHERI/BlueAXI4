@@ -229,9 +229,12 @@ function ActionValue #(AccessParams)
   AXI4_Len lenOut = fitsInNewBus ? 0 : truncate (nFlits - 1);
   AXI4_Size sizeOut = ?;
   case (toAXI4_Size (truncate (nBytes))) matches
-    .* &&& (!fitsInNewBus && overflow == 0):
+    .* &&& (overflow != 0): begin
+      sizeOut = sizeIn;
+      lenOut = lenIn;
+    end
+    .* &&& (!fitsInNewBus):
       sizeOut = toAXI4_Size (fromInteger (valueOf (newBusByteW))).Valid;
-    .* &&& (!fitsInNewBus && overflow != 0): sizeOut = sizeIn;
     tagged Valid .x &&& fitsInNewBus: sizeOut = x;
     default: die ($format ("error: unsupported AXI4 size encountered"));
   endcase
@@ -705,9 +708,10 @@ module mkAXI4WritesNarrowToWide
                        , "isLast ", fshow (isLast) ));
     // full flit ready
     Bit #(out_byte_idx_t) cntOffset = truncate (newCnt);
+    Bit #(out_byte_idx_t) cntMask = ~(~0 << pack (awsizeOut));
     vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
                        , "cntOffset ", fshow (cntOffset) ));
-    if (isLast || cntOffset == 0) begin
+    if (isLast || (cntOffset & cntMask) == 0) begin
       let wflitOut =  AXI4_WFlit { wdata: newData
                                  , wstrb: newStrb
                                  , wlast: isLast
