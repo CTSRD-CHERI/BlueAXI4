@@ -111,6 +111,27 @@ instance CulDeSac#(AXI4Stream_Slave #(id_, data_, dest_, user_));
   function culDeSac = nullSink;
 endinstance
 
+instance CulDeSac#(AXI4Stream_Master_Sig #(id_, data_, dest_, user_));
+  function culDeSac = interface AXI4Stream_Master_Sig;
+    method tdata     = ?;
+    method tstrb     = ?;
+    method tkeep     = ?;
+    method tlast     = ?;
+    method tid       = ?;
+    method tdest     = ?;
+    method tuser     = ?;
+    method tvalid    = False;
+    method tready(_) = noAction;
+  endinterface;
+endinstance
+
+instance CulDeSac#(AXI4Stream_Slave_Sig #(id_, data_, dest_, user_));
+  function culDeSac = interface AXI4Stream_Slave_Sig;
+    method tflit (a,b,c,d,e,f,g,h) = noAction;
+    method tready = True;
+  endinterface;
+endinstance
+
 interface AXI4Stream_Shim #( numeric type id_
                            , numeric type data_
                            , numeric type dest_
