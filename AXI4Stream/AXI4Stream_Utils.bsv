@@ -150,6 +150,118 @@ module toUnguarded_AXI4Stream_Master
   return ugm;
 endmodule
 
+module mkAXI4StreamWideToNarrow
+  (Tuple2 #( AXI4Stream_Slave #(id_, data_wide, dest_, user_)
+           , AXI4Stream_Master #(id_, data_narrow, dest_, user_) ))
+  provisos ( NumAlias #(n, TDiv #(data_wide, data_narrow))
+           , Add #(_a, data_narrow, data_wide)
+           , Add #(_b, TDiv #(data_narrow, 8), TDiv #(data_wide, 8)) );
+
+  Reg #(Bit #(data_wide)) tdata <- mkRegU;
+  Reg #(Bit #(TDiv#(data_wide, 8))) tstrb <- mkRegU;
+  Reg #(Bit #(TDiv#(data_wide, 8))) tkeep <- mkRegU;
+  Reg #(Bool) tlast <- mkRegU;
+  Reg #(Bit #(id_)) tid <- mkRegU;
+  Reg #(Bit #(dest_)) tdest <- mkRegU;
+  Reg #(Bit #(user_)) tuser <- mkRegU;
+
+  Reg #(Bit #(TLog#(n))) cnt <- mkRegU;
+  Reg #(Bool) busy <- mkReg(False);
+
+  return tuple2(
+    interface AXI4Stream_Slave;
+      method canPut = !busy;
+      method put(x) if (!busy) = action
+        tdata <= x.tdata;
+        tstrb <= x.tstrb;
+        tkeep <= x.tkeep;
+        tlast <= x.tlast;
+        tid   <= x.tid;
+        tdest <= x.tdest;
+        tuser <= x.tuser;
+        cnt   <= fromInteger(valueOf(TSub#(n, 1)));
+        busy  <= True;
+      endaction;
+    endinterface
+  , interface AXI4Stream_Master;
+      method canPeek = busy;
+      method peek if (busy) = AXI4Stream_Flit {
+          tdata: truncate(tdata)
+        , tstrb: truncate(tstrb)
+        , tkeep: truncate(tkeep)
+        , tlast: tlast && (cnt == 0)
+        , tid: tid
+        , tdest: tdest
+        , tuser: tuser
+        };
+      method drop if (busy) = action
+        tdata <= tdata >> valueOf(data_narrow);
+        tstrb <= tstrb >> valueOf(TDiv#(data_narrow, 8));
+        tkeep <= tkeep >> valueOf(TDiv#(data_narrow, 8));
+        cnt <= cnt - 1;
+        busy <= cnt != 0;
+      endaction;
+    endinterface
+  );
+
+endmodule
+
+module mkAXI4StreamNarrowToWide
+  (Tuple2 #( AXI4Stream_Slave #(id_, data_narrow, dest_, user_)
+           , AXI4Stream_Master #(id_, data_wide, dest_, user_) ))
+  provisos ( NumAlias #(n, TDiv #(data_wide, data_narrow))
+           , Add #(_a, data_narrow, data_wide)
+           , Add #(_b, TDiv #(data_narrow, 8), TDiv #(data_wide, 8)) );
+
+  Reg #(Bit #(data_wide)) tdata <- mkRegU;
+  Reg #(Bit #(TDiv#(data_wide, 8))) tstrb <- mkReg(0);
+  Reg #(Bit #(TDiv#(data_wide, 8))) tkeep <- mkReg(0);
+  Reg #(Bool) tlast <- mkRegU;
+  Reg #(Bit #(id_)) tid <- mkRegU;
+  Reg #(Bit #(dest_)) tdest <- mkRegU;
+  Reg #(Bit #(user_)) tuser <- mkRegU;
+
+  Reg #(Bit #(TLog#(n))) cnt <- mkRegU;
+  Reg #(Bool) flitReady <- mkReg(False);
+
+  return tuple2(
+    interface AXI4Stream_Slave;
+      method canPut = !flitReady;
+      method put(x) if (!flitReady) = action
+        tdata <= (tdata >> valueOf(data_narrow)) | {x.tdata, 0};
+        tstrb <= (tstrb >> valueOf(TDiv#(data_narrow, 8))) | {x.tstrb, 0};
+        tkeep <= (tkeep >> valueOf(TDiv#(data_narrow, 8))) | {x.tkeep, 0};
+        tlast <= x.tlast;
+        tid   <= x.tid;
+        tdest <= x.tdest;
+        tuser <= x.tuser;
+        cnt   <= cnt - 1;
+        flitReady <= x.tlast || cnt == 1;
+      endaction;
+    endinterface
+  , interface AXI4Stream_Master;
+      method canPeek = flitReady;
+      method peek if (flitReady) = AXI4Stream_Flit {
+          tdata: tdata
+        , tstrb: tstrb
+        , tkeep: tkeep
+        , tlast: tlast
+        , tid: tid
+        , tdest: tdest
+        , tuser: tuser
+        };
+      method drop if (flitReady) = action
+        tdata <= ?;
+        tstrb <= 0;
+        tkeep <= 0;
+        cnt <= fromInteger(valueOf(n));
+        flitReady <= False;
+      endaction;
+    endinterface
+  );
+
+endmodule
+
 module toUnguarded_AXI4Stream_Slave
   #(AXI4Stream_Slave #(id_, data_, dest_, user_) s)
    (AXI4Stream_Slave #(id_, data_, dest_, user_));
