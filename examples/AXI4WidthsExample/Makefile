@@ -21,12 +21,12 @@ $(SIMDIR):
 	mkdir -p $(BDIR) $(SIMDIR)
 
 AXI4ReadWidthsExample: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
-	$(BSC) $(BSCFLAGS) -sim -g testAXI4ReadWidths -u $<
-	$(BSC) $(BSCFLAGS) -sim -e testAXI4ReadWidths -Xl $(SIMDIR)/MemSim.o -o $@
+	$(BSC) $(BSCFLAGS) -check-assert -sim -g testAXI4ReadWidths -u $<
+	$(BSC) $(BSCFLAGS) -check-assert -sim -e testAXI4ReadWidths -Xl $(SIMDIR)/MemSim.o -o $@
 
 AXI4WriteWidthsExample: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
-	$(BSC) $(BSCFLAGS) -sim -g testAXI4WriteWidths -u $<
-	$(BSC) $(BSCFLAGS) -sim -e testAXI4WriteWidths -Xl $(SIMDIR)/MemSim.o -o $@
+	$(BSC) $(BSCFLAGS) -check-assert -sim -g testAXI4WriteWidths -u $<
+	$(BSC) $(BSCFLAGS) -check-assert -sim -e testAXI4WriteWidths -Xl $(SIMDIR)/MemSim.o -o $@
 
 $(SIMDIR)/MemSim.o: $(BLUEUTILSDIR)/MemSim.c
 	$(CC) $(CCFLAGS) -c -o $@ $<
