@@ -229,13 +229,13 @@ function ActionValue #(AccessParams)
   AXI4_Len lenOut = fitsInNewBus ? 0 : truncate (nFlits - 1);
   AXI4_Size sizeOut = ?;
   case (toAXI4_Size (truncate (nBytes))) matches
+    tagged Valid .x &&& fitsInNewBus: sizeOut = x;
     .* &&& (overflow != 0): begin
       sizeOut = sizeIn;
       lenOut = lenIn;
     end
     .* &&& (!fitsInNewBus):
       sizeOut = toAXI4_Size (fromInteger (valueOf (newBusByteW))).Valid;
-    tagged Valid .x &&& fitsInNewBus: sizeOut = x;
     default: die ($format ("error: unsupported AXI4 size encountered"));
   endcase
   vPrint (4, $format ("%m.deriveAccessParams - lenOut: %0d", lenOut));
