@@ -62,8 +62,17 @@ module testAXI4ReadWidths (Empty);
       wideSn_narrowMn <- mkAXI4DataWidthShim_WideToNarrow(one, one);
   match {.wideSn, .narrowMn} = wideSn_narrowMn;
 
+  Tuple2#(AXI4_Slave#(0, 8, 32, 0, 0, 0, 0, 0), AXI4_Master#(0, 8, 64, 0, 0, 0, 0, 0))
+      narrowSw_wideMw_inner <- mkAXI4DataWidthShim_NarrowToWide(one, one);
+  match {.narrowSw_inner, .wideMw_inner} = narrowSw_wideMw_inner;
+  Tuple2#(AXI4_Slave#(0, 8, 64, 0, 0, 0, 0, 0), AXI4_Master#(0, 8, 32, 0, 0, 0, 0, 0))
+      wideSn_narrowMn_inner <- mkAXI4DataWidthShim_WideToNarrow(one, one);
+  match {.wideSn_inner, .narrowMn_inner} = wideSn_narrowMn_inner;
+
   mkConnection(wideMw, testMem);
-  mkConnection(narrowMn, narrowSw);
+  mkConnection(narrowMn, wideSn_inner);
+  mkConnection(wideMw_inner, narrowSw);
+  mkConnection(narrowMn_inner, narrowSw_inner);
 
   Reg#(Bit#(8)) size <- mkReg(1);
   Reg#(Bit#(6)) offset <- mkReg(0);
@@ -167,8 +176,17 @@ module testAXI4WriteWidths (Empty);
       wideSn_narrowMn <- mkAXI4DataWidthShim_WideToNarrow(one, one);
   match {.wideSn, .narrowMn} = wideSn_narrowMn;
 
+  Tuple2#(AXI4_Slave#(0, 8, 32, 0, 0, 0, 0, 0), AXI4_Master#(0, 8, 64, 0, 0, 0, 0, 0))
+      narrowSw_wideMw_inner <- mkAXI4DataWidthShim_NarrowToWide(one, one);
+  match {.narrowSw_inner, .wideMw_inner} = narrowSw_wideMw_inner;
+  Tuple2#(AXI4_Slave#(0, 8, 64, 0, 0, 0, 0, 0), AXI4_Master#(0, 8, 32, 0, 0, 0, 0, 0))
+      wideSn_narrowMn_inner <- mkAXI4DataWidthShim_WideToNarrow(one, one);
+  match {.wideSn_inner, .narrowMn_inner} = wideSn_narrowMn_inner;
+
   mkConnection(wideMw, testMem);
-  mkConnection(narrowMn, narrowSw);
+  mkConnection(narrowMn, wideSn_inner);
+  mkConnection(wideMw_inner, narrowSw);
+  mkConnection(narrowMn_inner, narrowSw_inner);
 
   Reg#(Bit#(8)) size <- mkReg(1);
   Reg#(Bit#(6)) offset <- mkReg(0);
