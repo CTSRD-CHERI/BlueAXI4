@@ -550,7 +550,7 @@ module mkAXI4ReadsWideToNarrow
         // XXX better thing to do here?
         , ruser: rflitOut.ruser };
       rffIn.enq (rflitIn);
-      newCnt = 0;
+      if (burstFinished) newCnt = 0;
       vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                          , "rflitIn ", fshow (rflitIn) ));
     end
