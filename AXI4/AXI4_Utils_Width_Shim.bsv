@@ -777,7 +777,8 @@ module mkAXI4ReadsNarrowToWide
            , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
            , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , Alias #(local_info, Tuple4 #( Bit #(MaxBytesSz)
+           , Alias #(local_info, Tuple5 #( Bit #(MaxBytesSz)
+                                         , AXI4_Size
                                          , Bit #(addr_)
                                          , AXI4_Size
                                          , AXI4_Len ))
@@ -839,7 +840,8 @@ module mkAXI4ReadsNarrowToWide
     vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, "
                        , "arflitOut ", fshow (arflitOut) ));
     // pass local information to the data channel handling rule
-    let localffpayload = tuple4 ( nBytes
+    let localffpayload = tuple5 ( nBytes
+                                , arsizeOut
                                 , arflitIn.araddr
                                 , arflitIn.arsize
                                 , arflitIn.arlen );
@@ -854,7 +856,7 @@ module mkAXI4ReadsNarrowToWide
   Reg #(Bit #(MaxBytesSz)) cnt <- mkReg (0);
   let rflitOut = rffOut.first;
   let localffpayload = localff[rflitOut.rid].first;
-  match {.nBytes, .addr, .arsize, .arlen} = localffpayload;
+  match {.nBytes, .arsizeOut, .addr, .arsize, .arlen} = localffpayload;
   rule r_accumulate_send (localff[rflitOut.rid].notEmpty);
     vPrint (1, $format ("%m.mkAXI4ReadsNarrowToWide.r_accumulate_send"));
     // read current local information
@@ -897,8 +899,9 @@ module mkAXI4ReadsNarrowToWide
       rffOutConsume = True;
     end
     // full flit consumed
+    Bit #(out_byte_idx_t) consumeWidth = 1 << pack (arsizeOut);
     Bit #(out_byte_idx_t) cntOffset = truncate (newCnt);
-    rffOutConsume = rffOutConsume || (cntOffset == 0);
+    rffOutConsume = rffOutConsume || (cntOffset == 0) || (cntOffset == consumeWidth);
     if (rffOutConsume) begin
       rffOut.deq;
       vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
