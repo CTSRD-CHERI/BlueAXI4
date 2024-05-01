@@ -1,5 +1,5 @@
 /*-
- * Copyright (c) 2018-2022 Alexandre Joannou
+ * Copyright (c) 2018-2024 Alexandre Joannou
  * All rights reserved.
  *
  * This hardware design was developed by the University of Cambridge Computer
@@ -203,57 +203,65 @@ typedef Tuple3 #(
          , AXI4_Size              // AXI4 size for the desired new bus width
          ) AccessParams;
 function ActionValue #(AccessParams)
-  deriveAccessParams ( NumProxy #(newBusByteW) proxy // new bus width in bytes
+  deriveAccessParams ( NumProxy #(dstBusByteW) dstProxy // dest bus byte width
                      , AXI4_Len lenIn // original AXI4 len
                      , AXI4_Size sizeIn // original AXI4 size
                      )
-  provisos ( NumAlias #(busOffset_t, TLog #(newBusByteW))
-           , NumAlias #(flitIdx_t, TSub #(MaxBytesSz, busOffset_t))
-           , Add #(_a, busOffset_t, MaxBytesSz)
-           , Add #(_b, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, busOffset_t))
+  provisos ( NumAlias #(dstBusOffset_t, TLog #(dstBusByteW))
+           , NumAlias #(flitIdx_t, TSub #(MaxBytesSz, dstBusOffset_t))
+           , Add #(_a, dstBusOffset_t, MaxBytesSz)
+           , Add #(_b, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, dstBusOffset_t))
            ) = actionvalue
-
-  // compute number of bytes in the access and derived values
+  // compute number of bytes in the access
   ///////////////////////////////////////////////////////////
   Bit #(MaxBytesSz) nBytes = (zeroExtend (lenIn) + 1) << pack (sizeIn);
-  Bit #(busOffset_t) overflow = truncate (nBytes);
-  Bit #(flitIdx_t) nFlits = truncateLSB (nBytes);
-  Bool fitsInNewBus = nBytes <= fromInteger (valueOf (newBusByteW));
-  vPrint (4, $format ("%m.deriveAccessParams - nBytes: %0d", nBytes));
-  vPrint (4, $format ("%m.deriveAccessParams - overflow: %0d", overflow));
-  vPrint (4, $format ("%m.deriveAccessParams - nFlits: %0d", nFlits));
-  vPrint (4, $format ( "%m.deriveAccessParams - fitsInNewBus: "
-                     , fshow (fitsInNewBus) ));
-  // derive new AXI4 len and size
-  ///////////////////////////////
-  AXI4_Len lenOut = fitsInNewBus ? 0 : truncate (nFlits - 1);
-  AXI4_Size sizeOut = ?;
-  case (toAXI4_Size (truncate (nBytes))) matches
-    tagged Valid .x &&& fitsInNewBus: sizeOut = x;
-    .* &&& (overflow != 0): begin
-      sizeOut = sizeIn;
-      lenOut = lenIn;
-    end
-    .* &&& (!fitsInNewBus):
-      sizeOut = toAXI4_Size (fromInteger (valueOf (newBusByteW))).Valid;
-    default: die ($format ("error: unsupported AXI4 size encountered"));
-  endcase
-  vPrint (4, $format ("%m.deriveAccessParams - lenOut: %0d", lenOut));
-  vPrint (4, $format ("%m.deriveAccessParams - sizeOut: %0d", sizeOut));
 
-  // a few assertions
-  ///////////////////
-  if (overflow == 0 && nFlits == 0)
-    die ($format ("error: encountered AXI4 transfer with 0 flits"));
-  if ((overflow != 0 && nFlits > 255) || nFlits > 256)
-    die ($format ("error: too long AXI4 transfer (>256 flits) encountered"));
-  if (!isPowerOf2 (valueOf (newBusByteW)))
-    die ($format ("desired bus width should be a power of 2"));
+  // early bypass in the case the incoming size is narrower than the destination
+  // bus width
+  Bit #(MaxBytesSz) byteWidthIn = 1 << pack(sizeIn);
+  if (byteWidthIn <= fromInteger(valueOf(dstBusByteW)))
+    return tuple3 (nBytes, lenIn, sizeIn);
+  else begin
+    // compute derived values
+    ///////////////////////////////////////////////////////////
+    Bit #(dstBusOffset_t) overflow = truncate (nBytes);
+    Bit #(flitIdx_t) nFlits = truncateLSB (nBytes);
+    Bool fitsInDstBus = nBytes <= fromInteger (valueOf (dstBusByteW));
+    vPrint (4, $format ("%m.deriveAccessParams - nBytes: %0d", nBytes));
+    vPrint (4, $format ("%m.deriveAccessParams - overflow: %0d", overflow));
+    vPrint (4, $format ("%m.deriveAccessParams - nFlits: %0d", nFlits));
+    vPrint (4, $format ( "%m.deriveAccessParams - fitsInDstBus: "
+                       , fshow (fitsInDstBus) ));
+    // derive new AXI4 len and size
+    ///////////////////////////////
+    AXI4_Len lenOut = fitsInDstBus ? 0 : truncate (nFlits - 1);
+    AXI4_Size sizeOut = ?;
+    case (toAXI4_Size (truncate (nBytes))) matches
+      tagged Valid .x &&& fitsInDstBus: sizeOut = x;
+      .* &&& (overflow != 0): begin
+        sizeOut = sizeIn;
+        lenOut = lenIn;
+      end
+      .* &&& (!fitsInDstBus):
+        sizeOut = toAXI4_Size (fromInteger (valueOf (dstBusByteW))).Valid;
+      default: die ($format ("error: unsupported AXI4 size encountered"));
+    endcase
+    vPrint (4, $format ("%m.deriveAccessParams - lenOut: %0d", lenOut));
+    vPrint (4, $format ("%m.deriveAccessParams - sizeOut: %0d", sizeOut));
 
-  // return results
-  /////////////////
-  return tuple3 (nBytes, lenOut, sizeOut);
+    // a few assertions
+    ///////////////////
+    if (overflow == 0 && nFlits == 0)
+      die ($format ("error: encountered AXI4 transfer with 0 flits"));
+    if ((overflow != 0 && nFlits > 255) || nFlits > 256)
+      die ($format ("error: too long AXI4 transfer (>256 flits) encountered"));
+    if (!isPowerOf2 (valueOf (dstBusByteW)))
+      die ($format ("desired bus width should be a power of 2"));
 
+    // return results
+    /////////////////
+    return tuple3 (nBytes, lenOut, sizeOut);
+  end
 endactionvalue;
 
 // Convert wide writes to narrow writes
@@ -322,9 +330,9 @@ module mkAXI4WritesWideToNarrow
     vPrint (2, $format ( "%m.mkAXI4WritesWideToNarrow.aw_send, "
                        , "awflitIn ", fshow (awflitIn) ));
     // derive the new outgoing address request
-    NumProxy #(out_byte_t) proxyBusW = ?;
+    NumProxy #(out_byte_t) proxyDstBusW = error("Don't look inside a proxy");
     match {.nBytes, .awlenOut, .awsizeOut} <-
-      deriveAccessParams (proxyBusW, awflitIn.awlen, awflitIn.awsize);
+      deriveAccessParams (proxyDstBusW, awflitIn.awlen, awflitIn.awsize);
     let awflitOut = AXI4_AWFlit { awid: awflitIn.awid
                                 , awaddr: awflitIn.awaddr
                                 , awlen: awlenOut
@@ -478,9 +486,9 @@ module mkAXI4ReadsWideToNarrow
     vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
                        , "arflitIn ", fshow (arflitIn) ));
     // derive the new outgoing address request
-    NumProxy #(out_byte_t) proxyBusW = ?;
+    NumProxy #(out_byte_t) proxyDstBusW = error("Don't look inside a proxy");
     match {.nBytes, .arlenOut, .arsizeOut} <-
-      deriveAccessParams (proxyBusW, arflitIn.arlen, arflitIn.arsize);
+      deriveAccessParams (proxyDstBusW, arflitIn.arlen, arflitIn.arsize);
     let arflitOut = AXI4_ARFlit { arid: arflitIn.arid
                                 , araddr: arflitIn.araddr
                                 , arlen: arlenOut
@@ -637,9 +645,9 @@ module mkAXI4WritesNarrowToWide
     vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.aw_send, "
                        , "awflitIn ", fshow (awflitIn) ));
     // derive the new outgoing address request
-    NumProxy #(out_byte_t) proxyBusW = ?;
+    NumProxy #(out_byte_t) proxyDstBusW = error("Don't look inside a proxy");
     match {.nBytes, .awlenOut, .awsizeOut} <-
-      deriveAccessParams (proxyBusW, awflitIn.awlen, awflitIn.awsize);
+      deriveAccessParams (proxyDstBusW, awflitIn.awlen, awflitIn.awsize);
     let awflitOut = AXI4_AWFlit { awid: awflitIn.awid
                                 , awaddr: awflitIn.awaddr
                                 , awlen: awlenOut
@@ -774,6 +782,7 @@ module mkAXI4ReadsNarrowToWide
            , Sink #(AXI4_RFlit #(id_, out_bit_t, ruser_)) ))
   provisos ( NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
            , NumAlias #(in_byte_idx_t, TLog #(TDiv #(in_bit_t, 8)))
+           , NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
            , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
            , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
@@ -820,9 +829,9 @@ module mkAXI4ReadsNarrowToWide
     vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, "
                        , "arflitIn ", fshow (arflitIn) ));
     // derive the new outgoing address request
-    NumProxy #(out_byte_t) proxyBusW = ?;
+    NumProxy #(out_byte_t) proxyDstBusW = error("Don't look inside a proxy");
     match {.nBytes, .arlenOut, .arsizeOut} <-
-      deriveAccessParams (proxyBusW, arflitIn.arlen, arflitIn.arsize);
+      deriveAccessParams (proxyDstBusW, arflitIn.arlen, arflitIn.arsize);
     let arflitOut = AXI4_ARFlit { arid: arflitIn.arid
                                 , araddr: arflitIn.araddr
                                 , arlen: arlenOut
