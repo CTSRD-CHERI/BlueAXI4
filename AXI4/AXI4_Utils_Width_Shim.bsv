@@ -444,8 +444,9 @@ module mkAXI4ReadsWideToNarrow
            , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
            , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
            , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , Alias #(t_local, Tuple3 #( Bit #(addr_)
+           , Alias #(t_local, Tuple4 #( Bit #(addr_)
                                       , Bit #(MaxBytesSz)
+                                      , AXI4_Size
                                       , AXI4_Size ))
            , Mul #(in_byte_t, 8, in_bit_t)
            , Add #(_a, out_bit_t, in_bit_t)
@@ -505,7 +506,10 @@ module mkAXI4ReadsWideToNarrow
     vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
                        , "arflitOut ", fshow (arflitOut) ));
     // pass local information to the data channel handling rule
-    t_local localpayload = tuple3 (arflitIn.araddr, nBytes, arsizeOut);
+    t_local localpayload = tuple4 ( arflitIn.araddr
+                                  , nBytes
+                                  , arflitIn.arsize
+                                  , arsizeOut );
     localff[arflitIn.arid].enq (localpayload);
     vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
                        , "localpayload ", fshow (localpayload) ));
@@ -522,11 +526,7 @@ module mkAXI4ReadsWideToNarrow
     vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                        , "localff[rflitOut.rid].first "
                        , fshow (localff[rflitOut.rid].first) ));
-    match {.addr, .nBytes, .sizeOut} = localff[rflitOut.rid].first;
-    // read and consume incoming data response flit
-    rffOut.deq;
-    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
-                       , "rflitOut ", fshow (rflitOut) ));
+    match {.addr, .nBytes, .sizeIn, .sizeOut} = localff[rflitOut.rid].first;
     // accumulate the data and book-keep
     Bit #(in_byte_idx_t)     width = 1 << pack (sizeOut);
     Bit #(in_byte_idx_t)      loIn = truncate (addr) + truncate (cnt);
@@ -547,9 +547,8 @@ module mkAXI4ReadsWideToNarrow
                          , "consume localff[rflitOut.rid]" ));
     end
     // when a whole flit is ready, send it over and reset flit count
-    Bit #(in_byte_idx_t) cntOffset = truncate (newCnt);
-    let flitReady = cntOffset == 0;
-    if (burstFinished || flitReady) begin
+    Bit #(in_byte_idx_t) cntOffsetIn = truncate (newCnt);
+    if (burstFinished || (cntOffsetIn & ~(~0 << pack (sizeIn))) == 0) begin
       AXI4_RFlit #(id_, in_bit_t, ruser_) rflitIn = AXI4_RFlit {
           rid: rflitOut.rid
         , rdata: newData
@@ -561,6 +560,13 @@ module mkAXI4ReadsWideToNarrow
       if (burstFinished) newCnt = 0;
       vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
                          , "rflitIn ", fshow (rflitIn) ));
+    end
+    // consume incoming data response flit
+    Bit #(out_byte_idx_t) cntOffsetOut = truncate (newCnt);
+    if (burstFinished || (cntOffsetOut & ~(~0 << pack (sizeOut))) == 0) begin
+      rffOut.deq;
+      vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
+                         , "rflitOut ", fshow (rflitOut) ));
     end
     // accumulate state
     cnt <= newCnt;
