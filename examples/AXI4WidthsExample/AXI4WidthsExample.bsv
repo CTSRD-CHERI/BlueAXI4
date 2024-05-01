@@ -1,6 +1,6 @@
 /*-
  * Copyright (c) 2023 Peter Rugg
- * Copyright (c) 2022 Alexandre Joannou
+ * Copyright (c) 2022-2024 Alexandre Joannou
  * All rights reserved.
  *
  * This material is based upon work supported by the DoD Information Analysis
@@ -40,6 +40,19 @@ import FIFOF :: *;
 import FIFO :: *;
 import Vector :: *;
 import GetPut :: *;
+import Recipe :: *;
+
+// helpers
+////////////////////////////////////////////////////////////////////////////////
+
+Integer verbosity_level = 6;
+function Action vPrint (Integer lvl, Fmt fmt) =
+  action if (verbosity_level >= lvl) $display ("%0t - ", $time, fmt); endaction;
+
+function Action die (Fmt fmt) = action
+  $display ("%0t - ", $time, fmt);
+  $finish;
+endaction;
 
 module mkRNG #(a seed) (Get #(a)) provisos (Bits #(a, sz), Arith #(a));
   let state <- mkReg (seed);
@@ -50,11 +63,272 @@ module mkRNG #(a seed) (Get #(a)) provisos (Bits #(a, sz), Arith #(a));
   endactionvalue;
 endmodule
 
+////////////////////////////////////////////////////////////////////////////////
+module mkSlaveSetup #(AXI4_Slave #( t_id, t_addr, t_data
+                                  , t_awuser, t_wuser, t_buser
+                                  , t_aruser, t_ruser ) slv) (RecipeFSM)
+  provisos (Add #(__a, t_data, 512));
+  Reg #(Bit #(512))    data <- mkRegU;
+  Reg #(AXI4_Len)   flitIdx <- mkRegU;
+  let fsm <- mkRecipeFSM (rSeq(rBlock(
+    action
+      vPrint(6, $format("mkSlaveSetup - resetting"));
+      //data <= 'h01234567_89abcdef_02468ace_13579bdf_048c26ae_159d37bf_082a4c6e_193b5d7f_fedcba98_76543210_00000001_11111112_22222223_33333334_44444445_55555556;
+      data <= 'h01234567_89abcdef_02468ace_13579bdf_048c26ae_159d37bf_082a4c6e_193b5d7f_fedcba98_76543210_00000001_11111112_22222223_33333334_fedcba98_76543210;
+      flitIdx <= 0;
+    endaction
+  , action
+      AXI4_AWFlit #(t_id, t_addr, t_awuser) awflit = AXI4_AWFlit {
+          awaddr: 0
+        , awid: 0
+        , awsize: fromInteger (valueOf (TDiv #(t_data, 8)))
+        , awlen: fromInteger (valueOf (TDiv #(512, t_data)) - 1)
+        , awregion: 0
+        , awburst: INCR
+        , awprot: 0
+        , awcache: 0
+        , awlock: ?
+        , awqos: 0
+        , awuser: 0
+        };
+      slv.aw.put (awflit);
+      vPrint(5, $format("mkSlaveSetup - sent ", fshow (awflit)));
+    endaction
+  , rWhile ( flitIdx <= fromInteger (valueOf (TDiv #(512, t_data)) - 1)
+           , rAct(action
+      AXI4_WFlit #(t_data, t_wuser) wflit = AXI4_WFlit {
+          wdata: truncate (data)
+        , wstrb: ~0
+        , wlast: True
+        , wuser: 0
+        };
+      slv.w.put (wflit);
+      flitIdx <= flitIdx + 1;
+      vPrint(5, $format("mkSlaveSetup - sent ", fshow (wflit)));
+      vPrint(6, $format("mkSlaveSetup - flitIdx <= ", fshow (flitIdx + 1)));
+    endaction))
+  , rWhile (!slv.b.canPeek, rAct(
+      vPrint(6, $format("mkSlaveSetup - waiting for b flit"))
+    ))
+  , rAct(action
+      let bflit <- get (slv.b);
+      vPrint(5, $format("mkSlaveSetup - received ", fshow(bflit)));
+    endaction)
+  )));
+  return fsm;
+endmodule
+
+////////////////////////////////////////////////////////////////////////////////
+module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, 512
+                                       , t_awuser, t_wuser, t_buser
+                                       , t_aruser, t_ruser ) golden
+                         , AXI4_Slave #( t_id, t_addr, 512
+                                       , t_awuser, t_wuser, t_buser
+                                       , t_aruser, t_ruser ) dut ) (RecipeFSM)
+  provisos (Add #(__a, 6, t_addr));
+  // bookkeepig registers and fifos
+  Reg #(AXI4_Len)      reqLen <- mkRegU;
+  Reg #(AXI4_Size)    reqSize <- mkRegU;
+  Reg #(Bit #(6))   reqOffset <- mkRegU;
+  Reg #(AXI4_Len)  rspFlitIdx <- mkRegU;
+  Reg #(Bool)         rspDone <- mkRegU;
+  Reg #(Bool)         allDone <- mkRegU;
+  FIFOF #(Maybe #(Tuple3 #(AXI4_Len, AXI4_Size, Bit #(6)))) ff <- mkFIFOF;
+  // local transient values
+  match {.fflen, .ffsize, .ffoffset} = ff.first.Valid;
+  AXI4_Size nextSize =
+    //(nextOffset == 0 && nextLen == 0) ? reqSize + 1 : reqSize;
+    2;
+  AXI4_Len nextLen =
+    //(truncate (zeroExtend (reqOffset) + (reqLen + 1) * zeroExtend (pack (reqSize))) == 6'h0) ? 0 : reqLen + 1;
+    reqLen+1;
+  Bit #(6) nextOffset =
+    //(nextLen == 0) ? truncate (zeroExtend (reqOffset) + fromAXI4_Size (reqSize)) : reqOffset;
+    0;
+  // helper function
+  function Bit #(512)getRelevantData ( Bit #(512) data
+                                     , AXI4_Len flitIdx
+                                     , AXI4_Size size
+                                     , Bit #(6) offset );
+    Bit #(9)   byteShftAmnt = zeroExtend (offset) + (1 << pack (size)) * zeroExtend (flitIdx);
+    Bit #(512)  shiftedData = data >> (byteShftAmnt << 3);
+    Bit #(512)      bitMask = ~(~0 << ((9'h1 << pack (size)) << 3));
+    return shiftedData & bitMask;
+  endfunction
+  // state machine
+  let fsm <- mkRecipeFSM (rSeq(rBlock(
+    // init bookkeeping
+    action
+      reqLen <= 0;
+      reqSize <= 1;
+      reqOffset <= 0;
+      rspFlitIdx <= 0;
+      ff.clear;
+      rspDone <= False;
+      allDone <= False;
+      vPrint(4, $format("mkReadStimuliFSM - resetting "));
+    endaction
+  , rPar(rBlock(
+      // send requests
+      rSeq(rBlock(
+        rWhile (reqLen < 64, rAct(action
+          AXI4_ARFlit #(t_id, t_addr, t_aruser) arflit = AXI4_ARFlit {
+            araddr: zeroExtend (reqOffset)
+          , arid: 0
+          , aruser: 0
+          , arlen: reqLen
+          , arburst: INCR
+          , arcache: 0
+          , arlock: ?
+          , arregion: 0
+          , arqos: 0
+          , arprot: 0
+          , arsize: reqSize
+          };
+          golden.ar.put(arflit);
+          dut.ar.put(arflit);
+          ff.enq (Valid (tuple3 (reqLen, reqSize, reqOffset)));
+          reqLen <= nextLen;
+          reqSize <= nextSize;
+          reqOffset <= nextOffset;
+          vPrint(2, $format( "mkReadStimuliFSM - sent (to golden and dut) "
+                           , fshow(arflit) ));
+          vPrint(2, $format( "mkReadStimuliFSM - ff.enq Valid"
+                           , " reqLen: ", fshow (reqLen)
+                           , " reqSize: ", fshow (reqSize)
+                           , " reqOffset: ", fshow (reqOffset) ));
+          vPrint(2, $format( "mkReadStimuliFSM - new values"
+                           , " nextLen: ", fshow (nextLen)
+                           , " nextSize: ", fshow (nextSize)
+                           , " nextOffset: ", fshow (nextOffset) ));
+        endaction))
+      , rAct(action
+          ff.enq(Invalid);
+          vPrint(2, $format("mkReadStimuliFSM - done sending requests"));
+        endaction)
+      ))
+      // receive responses
+    , rWhile (!allDone, rWhen (ff.notEmpty, rIfElse (
+        isValid (ff.first)
+      , rSeq(rBlock(
+          rAct(action rspDone <= False; endaction)
+        , rWhile (!rspDone, rAct(action
+            let goldenR <- get (golden.r);
+            let goldenData =
+              getRelevantData (goldenR.rdata, rspFlitIdx, ffsize, ffoffset);
+            let dutR <- get (dut.r);
+            let dutData =
+              getRelevantData (dutR.rdata, rspFlitIdx, ffsize, ffoffset);
+            $display("------------------------------------------------");
+            vPrint (1, $format( "rspFlitIdx: ", fshow (rspFlitIdx)
+                              , ", fflen: ", fshow (fflen)
+                              , ", ffsize: ", fshow (ffsize)
+                              , ", ffoffset: ", fshow (ffoffset)
+                              ));
+            vPrint (1, $format("golden RFlit: ", fshow (goldenR)));
+            vPrint (1, $format("dut RFlit   : ", fshow (dutR)));
+            vPrint (1, $format("golden data: ", fshow (goldenData)));
+            vPrint (1, $format("dut data   : ", fshow (dutData)));
+            if (dutData != goldenData) die ($format("Fail"));
+            if (goldenR.rlast) begin
+              rspDone <= True;
+              ff.deq;
+              rspFlitIdx <= 0;
+              vPrint (2, $format("mkReadStimuliFSM -  ff.deq, reset rspFlitIdx"));
+            end else rspFlitIdx <= rspFlitIdx + 1;
+          endaction))
+        ))
+      , rAct (action
+          allDone <= True;
+          ff.deq;
+          vPrint (2, $format("mkReadStimuliFSM -  ff.first ", fshow(ff.first)));
+          vPrint (2, $format("mkReadStimuliFSM -  final dequeue, allDone <= True "));
+        endaction)
+      )))
+    ))
+    // all req / rsp pairs have gone through, success
+  , die ($format("Success"))
+  )));
+  return fsm;
+endmodule
+
+////////////////////////////////////////////////////////////////////////////////
+
+module testReadWideToNarrow (Empty);
+  // golden memory
+  AXI4_Slave #(0, 8, 512, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
+  let setupGolden <- mkSlaveSetup (goldenMem);
+  // dut memory
+  AXI4_Slave #(0, 8, 64, 0, 0, 0, 0, 0) dutMem <- mkAXI4Mem (512, UnInit);
+  NumProxy#(1) one = ?;
+  Tuple2 #( AXI4_Slave #(0, 8, 512, 0, 0, 0, 0, 0)
+          , AXI4_Master#(0, 8, 64, 0, 0, 0, 0, 0) )
+    wide2narrow <- mkAXI4DataWidthShim_WideToNarrow (one, one);
+  match {.dutSlave, .dutMaster} = wide2narrow;
+  mkConnection (dutMaster, dutMem);
+  let setupDUT <- mkSlaveSetup (dutSlave);
+  // run test
+  let stimuli <- mkReadStimuliFSM (goldenMem, dutSlave);
+  let fsm <- mkRecipeFSM (rSeq(rBlock(
+    $display("%0t - running setupGolden", $time)
+  , setupGolden.trigger
+  , rWhile(!setupGolden.canTrigger, rAct(noAction))
+  , $display("%0t - running setupDUT", $time)
+  , setupDUT.trigger
+  , rWhile(!setupDUT.canTrigger, rAct(noAction))
+  , $display("%0t - running stimuli", $time)
+  , stimuli.trigger
+  )));
+  let once <- mkReg(True);
+  rule startTest(once); fsm.trigger; once <= False; endrule
+endmodule
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
 module testAXI4ReadWidths (Empty);
   Vector#(2, AXI4_Slave#(0, 8, 512, 0, 0, 0, 0, 0)) mems <- replicateM(mkAXI4Mem(512, UnInit));
   let oracleMem = mems[0];
   let testMem = mems[1];
   NumProxy#(1) one = ?;
+  /*
   Tuple2#(AXI4_Slave#(0, 8, 64, 0, 0, 0, 0, 0), AXI4_Master#(0, 8, 512, 0, 0, 0, 0, 0))
       narrowSw_wideMw <- mkAXI4DataWidthShim_NarrowToWide(one, one);
   match {.narrowSw, .wideMw} = narrowSw_wideMw;
@@ -73,6 +347,14 @@ module testAXI4ReadWidths (Empty);
   mkConnection(narrowMn, wideSn_inner);
   mkConnection(wideMw_inner, narrowSw);
   mkConnection(narrowMn_inner, narrowSw_inner);
+  Tuple2#(AXI4_Slave#(0, 8, 32, 0, 0, 0, 0, 0), AXI4_Master#(0, 8, 512, 0, 0, 0, 0, 0))
+      narrowSw_wideMw <- mkAXI4DataWidthShim_NarrowToWide(one, one);
+  match {.narrowSw, .wideMw} = narrowSw_wideMw;
+  Tuple2#(AXI4_Slave#(0, 8, 512, 0, 0, 0, 0, 0), AXI4_Master#(0, 8, 32, 0, 0, 0, 0, 0))
+      wideSn_narrowMn <- mkAXI4DataWidthShim_WideToNarrow(one, one);
+  match {.wideSn, .narrowMn} = wideSn_narrowMn;
+  mkConnection(wideMw, testMem);
+  mkConnection(narrowMn, narrowSw);
 
   Reg#(Bit#(8)) size <- mkReg(1);
   Reg#(Bit#(6)) offset <- mkReg(0);
@@ -134,28 +416,25 @@ module testAXI4ReadWidths (Empty);
       end
   endrule
 
-  function getRelevantData(Bit#(512) data, Bit#(6) offset, Bit#(8) size);
-      Bit#(9) bitOffset = {offset, 0};
-      Bit#(11) bitSize = {size, 0};
-      return (data >> bitOffset) & ~((~0) << bitSize);
-  endfunction
-
   rule compareRsps(isValid(trackFF.first));
       match {.size, .offset} = trackFF.first.Valid;
       let testR <- get(wideSn.r);
       let oracleR <- get(oracleMem.r);
       let testData = getRelevantData(oracleR.rdata, offset, size);
       let oracleData = getRelevantData(testR.rdata, offset, size);
-      $display("reqsize: ", fshow(size), ", reqoffset: ", fshow(offset)
+      $display("%0t - ", $time, "reqsize: ", fshow(size), ", reqoffset: ", fshow(offset), ", reqlen: ", fshow(len)
            , "\noracle: ", fshow(oracleR)
-           , "\n        ", fshow(oracleData)
            , "\ntest  : ", fshow(testR)
-           , "\n        ", fshow(testData));
+           , "\noracle data: ", fshow(oracleData)
+           , "\ntest data  : ", fshow(testData));
       if(testData != oracleData) begin
           $display("Fail");
           $finish;
       end
-      trackFF.deq();
+      if (oracleR.rlast) begin
+        $display("------------------------------------------------");
+        trackFF.deq();
+      end
   endrule
 
   rule succeed(!isValid(trackFF.first));
@@ -297,5 +576,7 @@ module testAXI4WriteWidths (Empty);
       $finish;
   endrule
 endmodule
+
+*/
 
 endpackage
