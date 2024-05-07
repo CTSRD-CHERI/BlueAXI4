@@ -38,7 +38,7 @@ import BlueBasics :: *;
 import Connectable :: *;
 import FIFOF :: *;
 import FIFO :: *;
-import Vector :: *;
+import List :: *;
 import GetPut :: *;
 import Recipe :: *;
 
@@ -73,7 +73,6 @@ module mkSlaveSetup #(AXI4_Slave #( t_id, t_addr, t_data
   let fsm <- mkRecipeFSM (rSeq(rBlock(
     action
       vPrint(6, $format("mkSlaveSetup - resetting"));
-      //data <= 'h01234567_89abcdef_02468ace_13579bdf_048c26ae_159d37bf_082a4c6e_193b5d7f_fedcba98_76543210_00000001_11111112_22222223_33333334_44444445_55555556;
       data <= 'h01234567_89abcdef_02468ace_13579bdf_048c26ae_159d37bf_082a4c6e_193b5d7f_fedcba98_76543210_00000001_11111112_22222223_33333334_fedcba98_76543210;
       flitIdx <= 0;
     endaction
@@ -119,6 +118,43 @@ module mkSlaveSetup #(AXI4_Slave #( t_id, t_addr, t_data
 endmodule
 
 ////////////////////////////////////////////////////////////////////////////////
+function List #(Tuple3 #(Integer, Integer, Integer))
+  genFlitParams (Integer memSize);
+  List #(Tuple3 #(Integer, Integer, Integer)) flitParams = Nil;
+  for (Integer offset = 0; offset < memSize; offset = offset + 1) begin
+    Integer remain = memSize - offset;
+    Integer maxSize = 2**log2 (remain);
+    for (Integer size = 1; size <= maxSize; size = size * 2) begin
+      Integer maxLen = remain / size;
+      for (Integer len = 1; len <= maxLen; len = len + 1) begin
+        flitParams = cons (tuple3 (offset, size, len), flitParams);
+      end
+    end
+  end
+  return flitParams;
+endfunction
+
+function Tuple3 #(Bit #(n), AXI4_Size, AXI4_Len)
+         toAXI4_Params (Tuple3 #(Integer, Integer, Integer) params);
+  match {.offset, .size, .len} = params;
+  return tuple3 ( fromInteger (offset)
+                , fromInteger (size)
+                , fromInteger (len - 1) );
+endfunction
+
+module mkListToSource #(List #(t) xs) (Source #(Maybe #(t)))
+  provisos (Bits #(t, _));
+  Bit #(32) xsLen = fromInteger (length (xs));
+  Reg #(Bit #(32)) i <- mkReg (0);
+  let ff <- mkFIFOF;
+  rule produce (i <= xsLen);
+    ff.enq ((i == xsLen) ? Invalid : Valid (xs[i]));
+    i <= i + 1;
+  endrule
+  return toSource (ff);
+endmodule
+
+////////////////////////////////////////////////////////////////////////////////
 module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, 512
                                        , t_awuser, t_wuser, t_buser
                                        , t_aruser, t_ruser ) golden
@@ -127,41 +163,35 @@ module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, 512
                                        , t_aruser, t_ruser ) dut ) (RecipeFSM)
   provisos (Add #(__a, 6, t_addr));
   // bookkeepig registers and fifos
-  Reg #(AXI4_Len)      reqLen <- mkRegU;
-  Reg #(AXI4_Size)    reqSize <- mkRegU;
-  Reg #(Bit #(6))   reqOffset <- mkRegU;
+  //req side
+  let reqParams = map (toAXI4_Params, genFlitParams (valueOf(512)/8));
+  let paramSrc <- mkListToSource (reqParams);
+  Reg #(Bool) reqDone <- mkRegU;
+  // rsp side
   Reg #(AXI4_Len)  rspFlitIdx <- mkRegU;
   Reg #(Bool)         rspDone <- mkRegU;
   Reg #(Bool)         allDone <- mkRegU;
   FIFOF #(Maybe #(Tuple3 #(AXI4_Len, AXI4_Size, Bit #(6)))) ff <- mkFIFOF;
-  // local transient values
-  match {.fflen, .ffsize, .ffoffset} = ff.first.Valid;
-  AXI4_Size nextSize =
-    //(nextOffset == 0 && nextLen == 0) ? reqSize + 1 : reqSize;
-    2;
-  AXI4_Len nextLen =
-    //(truncate (zeroExtend (reqOffset) + (reqLen + 1) * zeroExtend (pack (reqSize))) == 6'h0) ? 0 : reqLen + 1;
-    reqLen+1;
-  Bit #(6) nextOffset =
-    //(nextLen == 0) ? truncate (zeroExtend (reqOffset) + fromAXI4_Size (reqSize)) : reqOffset;
-    0;
   // helper function
-  function Bit #(512)getRelevantData ( Bit #(512) data
-                                     , AXI4_Len flitIdx
-                                     , AXI4_Size size
-                                     , Bit #(6) offset );
-    Bit #(9)   byteShftAmnt = zeroExtend (offset) + (1 << pack (size)) * zeroExtend (flitIdx);
-    Bit #(512)  shiftedData = data >> (byteShftAmnt << 3);
-    Bit #(512)      bitMask = ~(~0 << ((9'h1 << pack (size)) << 3));
-    return shiftedData & bitMask;
+  function Bit #(512) getRelevantData ( Bit #(512) data
+                                      , AXI4_Len flitIdx
+                                      , AXI4_Size size
+                                      , Bit #(6) offset );
+    Bit #(6) offsetMask = ~0 << pack (size);
+    Bit #(6) alignedOffset = offset & offsetMask;
+    Bit #(6) withinSizeOffset = offset & ~offsetMask;
+    Bit #(512) mask = ~(~0 << (1 << (pack (size) + 3)));
+    if (flitIdx == 0) mask = mask & (~0 << {withinSizeOffset, 3'b000});
+
+    Bit #(9) byteShftAmnt = zeroExtend (alignedOffset) + (1 << pack (size)) * zeroExtend (flitIdx);
+    Bit #(512) shiftedData = data >> (byteShftAmnt << 3);
+    return shiftedData & mask;
   endfunction
   // state machine
   let fsm <- mkRecipeFSM (rSeq(rBlock(
     // init bookkeeping
     action
-      reqLen <= 0;
-      reqSize <= 1;
-      reqOffset <= 0;
+      reqDone <= False;
       rspFlitIdx <= 0;
       ff.clear;
       rspDone <= False;
@@ -171,36 +201,39 @@ module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, 512
   , rPar(rBlock(
       // send requests
       rSeq(rBlock(
-        rWhile (reqLen < 64, rAct(action
-          AXI4_ARFlit #(t_id, t_addr, t_aruser) arflit = AXI4_ARFlit {
-            araddr: zeroExtend (reqOffset)
-          , arid: 0
-          , aruser: 0
-          , arlen: reqLen
-          , arburst: INCR
-          , arcache: 0
-          , arlock: ?
-          , arregion: 0
-          , arqos: 0
-          , arprot: 0
-          , arsize: reqSize
-          };
-          golden.ar.put(arflit);
-          dut.ar.put(arflit);
-          ff.enq (Valid (tuple3 (reqLen, reqSize, reqOffset)));
-          reqLen <= nextLen;
-          reqSize <= nextSize;
-          reqOffset <= nextOffset;
-          vPrint(2, $format( "mkReadStimuliFSM - sent (to golden and dut) "
-                           , fshow(arflit) ));
-          vPrint(2, $format( "mkReadStimuliFSM - ff.enq Valid"
-                           , " reqLen: ", fshow (reqLen)
-                           , " reqSize: ", fshow (reqSize)
-                           , " reqOffset: ", fshow (reqOffset) ));
-          vPrint(2, $format( "mkReadStimuliFSM - new values"
-                           , " nextLen: ", fshow (nextLen)
-                           , " nextSize: ", fshow (nextSize)
-                           , " nextOffset: ", fshow (nextOffset) ));
+        rWhile (!reqDone, rAct(action
+          let mParams <- get (paramSrc);
+          case (mParams) matches
+            tagged Invalid: begin
+              ff.enq(Invalid);
+              reqDone <= True;
+              vPrint(2, $format("mkReadStimuliFSM - done sending requests"));
+            end
+            tagged Valid {.reqOffset, .reqSize, .reqLen}: begin
+              AXI4_ARFlit #(t_id, t_addr, t_aruser) arflit = AXI4_ARFlit {
+                araddr: zeroExtend (reqOffset)
+              , arid: 0
+              , aruser: 0
+              , arlen: reqLen
+              , arburst: INCR
+              , arcache: 0
+              , arlock: ?
+              , arregion: 0
+              , arqos: 0
+              , arprot: 0
+              , arsize: reqSize
+              };
+              golden.ar.put(arflit);
+              dut.ar.put(arflit);
+              ff.enq (Valid (tuple3 (reqLen, reqSize, reqOffset)));
+              vPrint(2, $format( "mkReadStimuliFSM - sent (to golden and dut) "
+                               , fshow(arflit) ));
+              //vPrint(2, $format( "mkReadStimuliFSM - ff.enq Valid"
+              //                 , " reqLen: %0d", reqLen
+              //                 , " reqSize: %0d", reqSize
+              //                 , " reqOffset: %0d", reqOffset ));
+            end
+          endcase
         endaction))
       , rAct(action
           ff.enq(Invalid);
@@ -213,6 +246,7 @@ module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, 512
       , rSeq(rBlock(
           rAct(action rspDone <= False; endaction)
         , rWhile (!rspDone, rAct(action
+            match {.fflen, .ffsize, .ffoffset} = ff.first.Valid;
             let goldenR <- get (golden.r);
             let goldenData =
               getRelevantData (goldenR.rdata, rspFlitIdx, ffsize, ffoffset);
