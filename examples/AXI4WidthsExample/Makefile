@@ -25,6 +25,10 @@ testReadWideToNarrow: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
 	$(BSC) $(BSCFLAGS) -check-assert -sim -g testReadWideToNarrow -u $<
 	$(BSC) $(BSCFLAGS) -check-assert -sim -e testReadWideToNarrow -Xl $(SIMDIR)/MemSim.o -o $@
 
+#testReadNarrowToWide: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
+#	$(BSC) $(BSCFLAGS) -check-assert -sim -g testReadNarrowToWide -u $<
+#	$(BSC) $(BSCFLAGS) -check-assert -sim -e testReadNarrowToWide -Xl $(SIMDIR)/MemSim.o -o $@
+
 AXI4ReadWidthsExample: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
 	$(BSC) $(BSCFLAGS) -check-assert -sim -g testAXI4ReadWidths -u $<
 	$(BSC) $(BSCFLAGS) -check-assert -sim -e testAXI4ReadWidths -Xl $(SIMDIR)/MemSim.o -o $@

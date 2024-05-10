@@ -196,7 +196,7 @@ module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, 512
       ff.clear;
       rspDone <= False;
       allDone <= False;
-      vPrint(4, $format("mkReadStimuliFSM - resetting "));
+      vPrint(4, $format("mkReadStimuliFSM - resetting"));
     endaction
   , rPar(rBlock(
       // send requests
@@ -276,7 +276,7 @@ module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, 512
           allDone <= True;
           ff.deq;
           vPrint (2, $format("mkReadStimuliFSM -  ff.first ", fshow(ff.first)));
-          vPrint (2, $format("mkReadStimuliFSM -  final dequeue, allDone <= True "));
+          vPrint (2, $format("mkReadStimuliFSM -  final dequeue, allDone <= True"));
         endaction)
       )))
     ))
@@ -290,13 +290,13 @@ endmodule
 
 module testReadWideToNarrow (Empty);
   // golden memory
-  AXI4_Slave #(0, 8, 512, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
+  AXI4_Slave #(0, 16, 512, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
   let setupGolden <- mkSlaveSetup (goldenMem);
   // dut memory
-  AXI4_Slave #(0, 8, 64, 0, 0, 0, 0, 0) dutMem <- mkAXI4Mem (512, UnInit);
+  AXI4_Slave #(0, 16, 64, 0, 0, 0, 0, 0) dutMem <- mkAXI4Mem (512, UnInit);
   NumProxy#(1) one = ?;
-  Tuple2 #( AXI4_Slave #(0, 8, 512, 0, 0, 0, 0, 0)
-          , AXI4_Master#(0, 8, 64, 0, 0, 0, 0, 0) )
+  Tuple2 #( AXI4_Slave #(0, 16, 512, 0, 0, 0, 0, 0)
+          , AXI4_Master#(0, 16, 64, 0, 0, 0, 0, 0) )
     wide2narrow <- mkAXI4DataWidthShim_WideToNarrow (one, one);
   match {.dutSlave, .dutMaster} = wide2narrow;
   mkConnection (dutMaster, dutMem);
@@ -316,6 +316,35 @@ module testReadWideToNarrow (Empty);
   let once <- mkReg(True);
   rule startTest(once); fsm.trigger; once <= False; endrule
 endmodule
+
+//module testReadNarrowToWide (Empty);
+//  // golden memory
+//  AXI4_Slave #(0, 16, 64, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
+//  let setupGolden <- mkSlaveSetup (goldenMem);
+//  // dut memory
+//  AXI4_Slave #(0, 16, 512, 0, 0, 0, 0, 0) dutMem <- mkAXI4Mem (512, UnInit);
+//  NumProxy#(1) one = ?;
+//  Tuple2 #( AXI4_Slave #(0, 16, 64, 0, 0, 0, 0, 0)
+//          , AXI4_Master#(0, 16, 512, 0, 0, 0, 0, 0) )
+//    narrow2wide <- mkAXI4DataWidthShim_NarrowToWide (one, one);
+//  match {.dutSlave, .dutMaster} = narrow2wide;
+//  mkConnection (dutMaster, dutMem);
+//  let setupDUT <- mkSlaveSetup (dutSlave);
+//  // run test
+//  let stimuli <- mkReadStimuliFSM (goldenMem, dutSlave);
+//  let fsm <- mkRecipeFSM (rSeq(rBlock(
+//    $display("%0t - running setupGolden", $time)
+//  , setupGolden.trigger
+//  , rWhile(!setupGolden.canTrigger, rAct(noAction))
+//  , $display("%0t - running setupDUT", $time)
+//  , setupDUT.trigger
+//  , rWhile(!setupDUT.canTrigger, rAct(noAction))
+//  , $display("%0t - running stimuli", $time)
+//  , stimuli.trigger
+//  )));
+//  let once <- mkReg(True);
+//  rule startTest(once); fsm.trigger; once <= False; endrule
+//endmodule
 
 
 

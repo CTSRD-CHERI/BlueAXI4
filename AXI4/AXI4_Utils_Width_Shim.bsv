@@ -89,37 +89,42 @@ module mkAXI4DataWidthShim_WideToNarrow
            , NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
            , NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
            , NumAlias #(in_byte_idx_t, TLog #(in_byte_t))
-           , Mul #(in_byte_t, 8, in_bit_t)
+           , NumAlias #(ratio_t, TDiv #(in_bit_t, out_bit_t))
            , Add #(_a, out_bit_t, in_bit_t)
-           , Add #(_b, out_byte_t, in_byte_t)
-           , Add #(_c, out_byte_idx_t, out_bit_idx_t)
-           , Add #(_d, out_byte_idx_t, addr_)
-           , Add #(_e, out_byte_idx_t, MaxBytesSz)
-           , Add #(_f, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           , Add #(_b, out_bit_idx_t, in_bit_idx_t)
+           , Add #(_c, out_byte_t, in_byte_t)
+           , Add #(_d, out_byte_idx_t, in_byte_idx_t)
+           , Add #(_e, in_byte_idx_t, in_bit_idx_t)
+           , Add #(_f, out_byte_idx_t, MaxBytesSz)
            , Add #(_g, in_byte_idx_t, MaxBytesSz)
-           , Add #(_h, out_byte_idx_t, in_byte_idx_t)
-           , Add #(_i, out_bit_idx_t, in_bit_idx_t)
-           , Add #(_j, in_byte_idx_t, in_bit_idx_t)
-           , Add #(_k, in_byte_idx_t, addr_)
+           , Add #(_h, in_byte_idx_t, addr_)
+           , Add #(_i, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           , Add #(_j, TLog #(ratio_t), addr_)
+           , Add #(_k, TAdd #(SizeOf #(AXI4_Len), 1), addr_)
+           , Mul #(ratio_t, out_bit_t, in_bit_t)
            );
   match {.aw_X, .w_X, .b_X, .aw_Y, .w_Y, .b_Y}
     <- mkAXI4WritesWideToNarrow (proxyBuffInDepth, proxyBuffOutDepth);
-  match {.ar_X, .r_X, .ar_Y, .r_Y}
-    <- mkAXI4ReadsWideToNarrow (proxyBuffInDepth, proxyBuffOutDepth);
+  let arWide <- mkSourceSinkShimBypassFF1;
+  let rWide <- mkSourceSinkShimBypassFF1;
+  let arNarrow <- mkSourceSinkShimBypassFF1;
+  let rNarrow <- mkSourceSinkShimBypassFF1;
+  mkAXI4ReadsWideToNarrow ( tuple2 (arWide.source, rWide.sink)
+                          , tuple2 (arNarrow.sink, rNarrow.source) );
   return tuple2 (
     interface AXI4_Slave;
       interface aw = aw_X;
       interface  w = w_X;
       interface  b = b_X;
-      interface ar = ar_X;
-      interface  r = r_X;
+      interface ar = arWide.sink;
+      interface  r = rWide.source;
     endinterface
   , interface AXI4_Master;
       interface aw = aw_Y;
       interface  w = w_Y;
       interface  b = b_Y;
-      interface ar = ar_Y;
-      interface  r = r_Y;
+      interface ar = arNarrow.source;
+      interface  r = rNarrow.sink;
     endinterface );
 endmodule
 
@@ -141,7 +146,9 @@ module mkAXI4DataWidthShim_NarrowToWide
            , NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
            , NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
            , NumAlias #(in_byte_idx_t, TLog #(in_byte_t))
+           , NumAlias #(ratio_t, TDiv #(out_bit_t, in_bit_t))
            , Mul #(out_byte_t, 8, out_bit_t)
+           , Mul #(ratio_t, in_bit_t, out_bit_t)
            , Add #(_a, in_bit_t, out_bit_t)
            , Add #(_b, in_byte_t, out_byte_t)
            , Add #(_c, in_byte_idx_t, out_byte_idx_t)
@@ -151,25 +158,30 @@ module mkAXI4DataWidthShim_NarrowToWide
            , Add #(_g, in_bit_idx_t, out_bit_idx_t)
            , Add #(_h, out_byte_idx_t, MaxBytesSz)
            , Add #(_i, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
+           , Add #(_j, TLog #(ratio_t), addr_)
            );
   match {.aw_X, .w_X, .b_X, .aw_Y, .w_Y, .b_Y}
     <- mkAXI4WritesNarrowToWide (proxyBuffInDepth, proxyBuffOutDepth);
-  match {.ar_X, .r_X, .ar_Y, .r_Y}
-    <- mkAXI4ReadsNarrowToWide (proxyBuffInDepth, proxyBuffOutDepth);
+  let arNarrow <- mkSourceSinkShimBypassFF1;
+  let rNarrow <- mkSourceSinkShimBypassFF1;
+  let arWide <- mkSourceSinkShimBypassFF1;
+  let rWide <- mkSourceSinkShimBypassFF1;
+  mkAXI4ReadsNarrowToWide ( tuple2 (arNarrow.source, rNarrow.sink)
+                          , tuple2 (arWide.sink, rWide.source) );
   return tuple2 (
     interface AXI4_Slave;
       interface aw = aw_X;
       interface  w = w_X;
       interface  b = b_X;
-      interface ar = ar_X;
-      interface  r = r_X;
+      interface ar = arNarrow.sink;
+      interface  r = rNarrow.source;
     endinterface
   , interface AXI4_Master;
       interface aw = aw_Y;
       interface  w = w_Y;
       interface  b = b_Y;
-      interface ar = ar_Y;
-      interface  r = r_Y;
+      interface ar = arWide.source;
+      interface  r = rWide.sink;
     endinterface );
 endmodule
 
@@ -420,171 +432,6 @@ module mkAXI4WritesWideToNarrow
 
 endmodule
 
-// Convert wide reads to narrow reads
-////////////////////////////////////////////////////////////////////////////////
-
-// XXX TODO: for the time being, this module does not break atomicity of
-// transactions and limits itself to one request in the destination AXI4 domain
-// per incoming request. Since the incoming requests are on a wider bus, it may
-// be impossible to fit the total requested amount of bytes in a single request
-// of the destination AXI4 domain. Such a request is explicitly not supported.
-// (undefined behaviour in hardware, assertion in simulation)
-module mkAXI4ReadsWideToNarrow
-  // received parameters
-  #( parameter NumProxy #(buffInDepth)  proxyBuffInDepth
-   , parameter NumProxy #(buffOutDepth) proxyBuffOutDepth)
-  // returned interface
-  (Tuple4 #( Sink #(AXI4_ARFlit #(id_, addr_, aruser_))
-           , Source #(AXI4_RFlit #(id_, in_bit_t, ruser_))
-           , Source #(AXI4_ARFlit #(id_, addr_, aruser_))
-           , Sink #(AXI4_RFlit #(id_, out_bit_t, ruser_)) ))
-  provisos ( NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
-           , NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
-           , NumAlias #(in_byte_idx_t, TLog #(in_byte_t))
-           , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
-           , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
-           , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , Alias #(t_local, Tuple4 #( Bit #(addr_)
-                                      , Bit #(MaxBytesSz)
-                                      , AXI4_Size
-                                      , AXI4_Size ))
-           , Mul #(in_byte_t, 8, in_bit_t)
-           , Add #(_a, out_bit_t, in_bit_t)
-           , Add #(_b, out_byte_idx_t, in_byte_idx_t)
-           , Add #(_c, out_bit_idx_t, in_bit_idx_t)
-           , Add #(_d, in_byte_idx_t, in_bit_idx_t)
-           , Add #(_e, in_byte_idx_t, MaxBytesSz)
-           , Add #(_f, in_byte_idx_t, addr_)
-           , Add #(_g, out_byte_idx_t, MaxBytesSz)
-           , Add #(_h, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
-           );
-
-  // local declarations
-  //////////////////////////////////////////////////////////////////////////////
-  // interfaces //
-  ////////////////
-  // Request channel, single flit
-  FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffIn <- mkFIFOF;
-  FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffOut <- mkFIFOF;
-  // Data response channel
-  FIFOF #(AXI4_RFlit #(id_, in_bit_t, ruser_))
-    rffIn <- mkSizedFIFOF (valueOf (buffInDepth));
-  FIFOF #(AXI4_RFlit #(id_, out_bit_t, ruser_))
-    rffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
-  ////////////
-  // others //
-  ////////////
-  // local state to remember addresses
-  Vector #(TExp #(id_), FIFOF #(t_local)) localff <- replicateM (mkUGFIFOF);
-
-  // handle address channel
-  //////////////////////////////////////////////////////////////////////////////
-  let arflitIn = arffIn.first;
-  rule ar_send (localff[arflitIn.arid].notFull);
-    vPrint (1, $format ("%m.mkAXI4ReadsWideToNarrow.ar_send"));
-    // consume the incoming address request
-    arffIn.deq;
-    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
-                       , "arflitIn ", fshow (arflitIn) ));
-    // derive the new outgoing address request
-    NumProxy #(out_byte_t) proxyDstBusW = error("Don't look inside a proxy");
-    match {.nBytes, .arlenOut, .arsizeOut} <-
-      deriveAccessParams (proxyDstBusW, arflitIn.arlen, arflitIn.arsize);
-    let arflitOut = AXI4_ARFlit { arid: arflitIn.arid
-                                , araddr: arflitIn.araddr
-                                , arlen: arlenOut
-                                , arsize: arsizeOut
-                                , arburst: INCR
-                                , arlock: arflitIn.arlock
-                                , arcache: arflitIn.arcache
-                                , arprot: arflitIn.arprot
-                                , arqos: arflitIn.arqos
-                                , arregion: arflitIn.arregion
-                                , aruser: arflitIn.aruser };
-    // send the outgoing address request
-    arffOut.enq (arflitOut);
-    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
-                       , "arflitOut ", fshow (arflitOut) ));
-    // pass local information to the data channel handling rule
-    t_local localpayload = tuple4 ( arflitIn.araddr
-                                  , nBytes
-                                  , arflitIn.arsize
-                                  , arsizeOut );
-    localff[arflitIn.arid].enq (localpayload);
-    vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.ar_send, "
-                       , "localpayload ", fshow (localpayload) ));
-  endrule
-
-  // handle data response channel
-  //////////////////////////////////////////////////////////////////////////////
-  Reg #(Bit #(MaxBytesSz)) cnt <- mkReg (0);
-  Reg #(Bit #(in_bit_t)) data <- mkRegU;
-  let rflitOut = rffOut.first;
-  rule r_accumulate_send (localff[rflitOut.rid].notEmpty);
-    vPrint (1, $format ("%m.mkAXI4ReadsWideToNarrow.r_accumulate_send"));
-    // read current local information
-    vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
-                       , "localff[rflitOut.rid].first "
-                       , fshow (localff[rflitOut.rid].first) ));
-    match {.addr, .nBytes, .sizeIn, .sizeOut} = localff[rflitOut.rid].first;
-    // accumulate the data and book-keep
-    Bit #(in_byte_idx_t)     width = 1 << pack (sizeOut);
-    Bit #(in_byte_idx_t)      loIn = truncate (addr) + truncate (cnt);
-    Bit #(out_byte_idx_t)    loOut = truncate (loIn);
-    Bit #(in_bit_idx_t)    loInBit = zeroExtend (loIn) << 3;
-    Bit #(out_bit_idx_t)  loOutBit = truncate (loInBit);
-    Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
-    //tmpData[hiInBit:loInBit] = rflitOut.rdata[hiOutBit:loOutBit];
-    Bit #(in_byte_t) msk = ~(~0 << width) << loIn;
-    Bit #(out_bit_t) tmpDataOut = rflitOut.rdata >> loOutBit;
-    Bit #(in_bit_t) tmpDataIn = zeroExtend (tmpDataOut) << loInBit;
-    Bit #(in_bit_t) newData = mergeWithBE (msk, data, tmpDataIn);
-    // when the burst is finished, consume local information
-    let burstFinished = newCnt == nBytes;
-    if (burstFinished) begin
-      localff[rflitOut.rid].deq;
-      vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
-                         , "consume localff[rflitOut.rid]" ));
-    end
-    // when a whole flit is ready, send it over and reset flit count
-    Bit #(in_byte_idx_t) cntOffsetIn = truncate (newCnt);
-    if (burstFinished || (cntOffsetIn & ~(~0 << pack (sizeIn))) == 0) begin
-      AXI4_RFlit #(id_, in_bit_t, ruser_) rflitIn = AXI4_RFlit {
-          rid: rflitOut.rid
-        , rdata: newData
-        , rresp: rflitOut.rresp
-        , rlast: burstFinished
-        // XXX better thing to do here?
-        , ruser: rflitOut.ruser };
-      rffIn.enq (rflitIn);
-      if (burstFinished) newCnt = 0;
-      vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
-                         , "rflitIn ", fshow (rflitIn) ));
-    end
-    // consume incoming data response flit
-    Bit #(out_byte_idx_t) cntOffsetOut = truncate (newCnt);
-    if (burstFinished || (cntOffsetOut & ~(~0 << pack (sizeOut))) == 0) begin
-      rffOut.deq;
-      vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
-                         , "rflitOut ", fshow (rflitOut) ));
-    end
-    // accumulate state
-    cnt <= newCnt;
-    data <= newData;
-    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
-                       , "cnt (", fshow (cnt)
-                       , ") <= newCnt (", fshow (newCnt), ")" ));
-    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow.r_accumulate_send, "
-                       , "data (", fshow (data)
-                       , ") <= newData (", fshow (newData), ")" ));
-  endrule
-
-  // return channels as interface
-  //////////////////////////////////////////////////////////////////////////////
-  return tuple4 ( toSink (arffIn), toSource (rffIn)
-                , toSource (arffOut), toSink (rffOut) );
-endmodule
-
 // Convert narrow writes to wide writes
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -771,165 +618,230 @@ module mkAXI4WritesNarrowToWide
 
 endmodule
 
+// Convert wide reads to narrow reads
+////////////////////////////////////////////////////////////////////////////////
+
+// XXX TODO: for the time being, this module does not break atomicity of
+// transactions and limits itself to one request in the destination AXI4 domain
+// per incoming request. Since the incoming requests are on a wider bus, it may
+// be impossible to fit the total requested amount of bytes in a single request
+// of the destination AXI4 domain. Such a request is explicitly not supported.
+// (undefined behaviour in hardware, assertion in simulation)
+module mkAXI4ReadsWideToNarrow
+  // received interfaces
+  #( Tuple2 #( Source #(AXI4_ARFlit #(id_t, addr_t, aruser_t))
+             , Sink #(AXI4_RFlit #(id_t, wide_t, ruser_t)) ) wide
+   , Tuple2 #( Sink #(AXI4_ARFlit #(id_t, addr_t, aruser_t))
+             , Source #(AXI4_RFlit #(id_t, narrow_t, ruser_t)) ) narrow )
+  (Empty)
+  provisos ( NumAlias #(ratio_t, TDiv #(wide_t, narrow_t))
+           , NumAlias #(lanes_idx_t, TLog #(ratio_t))
+           , NumAlias #(narrow_byte_t, TDiv #(narrow_t, 8))
+           , NumAlias #(wide_byte_t, TDiv #(wide_t, 8))
+           , NumAlias #(narrow_byte_idx_t, TLog #(narrow_byte_t))
+           , NumAlias #(wide_byte_idx_t, TLog #(wide_byte_t))
+           , Add #(_a, lanes_idx_t, addr_t)
+           , Add #(_b, TAdd #(SizeOf #(AXI4_Len), 1), addr_t)
+           , Mul #(ratio_t, narrow_t, wide_t)
+           );
+
+  // extract handles to received interfaces
+  match {.arWideSrc, .rWideSnk} = wide;
+  match {.arNarrowSnk, .rNarrowSrc} = narrow;
+
+  // internal bookkeeping fifos
+  Vector #(TExp #(id_t), FIFOF #(Tuple3 #(
+    Bit #(addr_t) // narrow requested address
+  , AXI4_Size     // wide requested size
+  , AXI4_Size     // narrow requested size
+  ))) ffs <- replicateM (mkUGFIFOF);
+
+  // maximum size supported by the narrow bus
+  AXI4_Size maxNarrowSize =
+    toAXI4_Size (fromInteger (valueOf (narrow_byte_t))).Valid;
+
+  // forward ar flits
+  // if the requested size does not fit in the narrow bus, adapt the request to
+  // take the bus width ratio into account
+  let arflit = arWideSrc.peek;
+  rule forward_ar_flit (   ffs[arflit.arid].notFull
+                        && arWideSrc.canPeek
+                        && arNarrowSnk.canPut );
+    vPrint (2, $format ("%m.mkAXI4ReadsWideToNarrow - forward_ar_flit"));
+    vPrint (1, $format ("%m.mkAXI4ReadsWideToNarrow - wide: ", fshow (arflit)));
+    // consume wide ar flit, init narrow addr, size and len
+    arWideSrc.drop;
+    Bit #(addr_t) narrowAddr = arflit.araddr;
+    AXI4_Size narrowSize = arflit.arsize;
+    AXI4_Len narrowLen = arflit.arlen;
+    // if the requested size doesn't fit, ask for more flits
+    if (arflit.arsize > maxNarrowSize) begin
+      vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow - size doesn't fit"
+                         , ", saturate at ", fshow (maxNarrowSize) ));
+      narrowAddr = arflit.araddr & (~0 << pack (arflit.arsize));
+      narrowSize = maxNarrowSize;
+      //Bit #(TAdd #(SizeOf #(AXI4_Len), 1)) tmp = (zeroExtend (narrowLen) + 1);
+      //tmp = tmp << (pack (arflit.arsize) - pack (maxNarrowSize));
+      //tmp = tmp - 1;
+      Bit #(SizeOf #(AXI4_Len)) tmp =
+        ~(~narrowLen << (pack (arflit.arsize) - pack (maxNarrowSize)));
+      if (msb (tmp) == 1'b1) die ($format("unsupported AXI4_Len ", fshow(tmp)));
+      else narrowLen = truncate (tmp);
+    end
+    // bookkeep
+    ffs[arflit.arid].enq (tuple3 (
+      narrowAddr
+    , arflit.arsize
+    , narrowSize ));
+    // send the new narrow ar flit
+    let arflitNarrow = AXI4_ARFlit { arid: arflit.arid
+                                   , araddr: narrowAddr
+                                   , arlen: narrowLen
+                                   , arsize: narrowSize
+                                   , arburst: arflit.arburst
+                                   , arlock: arflit.arlock
+                                   , arcache: arflit.arcache
+                                   , arprot: arflit.arprot
+                                   , arqos: arflit.arqos
+                                   , arregion: arflit.arregion
+                                   , aruser: arflit.aruser };
+    arNarrowSnk.put (arflitNarrow);
+    vPrint (1, $format ( "%m.mkAXI4ReadsWideToNarrow - narrow: "
+                       , fshow (arflitNarrow) ));
+  endrule
+
+  // forward r flits (accumulate if necessary)
+  // XXX assumes well-formed r transfer (with consistent rid througout)
+  AXI4_RFlit #(id_t, narrow_t, ruser_t) rflit = rNarrowSrc.peek;
+  match {.narrowAddr, .wideSize, .narrowSize} = ffs[rflit.rid].first;
+  Reg #(Bit #(TAdd #(SizeOf #(AXI4_Len), 1))) flitCnt <- mkReg (0);
+  Reg #(Vector #(ratio_t, Bit #(narrow_t))) data <- mkRegU; // accumulated data
+
+  rule accumulate_r_flit (   ffs[rflit.rid].notEmpty
+                          && rWideSnk.canPut
+                          && rNarrowSrc.canPeek );
+    vPrint (2, $format ("%m.mkAXI4ReadsWideToNarrow - accumulate_r_flit"));
+    vPrint (1, $format ( "%m.mkAXI4ReadsWideToNarrow - narrow: "
+                       , fshow (rflit) ));
+    // consume narrow r flit
+    rNarrowSrc.drop;
+    let newFlitCnt = flitCnt + 1;
+    // identify relevant lane index to produce data and accumulate the data
+    Bit #(addr_t) currentAddr =
+      narrowAddr + (zeroExtend (flitCnt) << pack (narrowSize));
+    Bit #(lanes_idx_t) lanes_idx =
+      truncate (currentAddr >> valueOf (narrow_byte_idx_t));
+    Vector #(ratio_t, Bit #(narrow_t)) newData = data;
+    newData[lanes_idx] = rflit.rdata;
+    vPrint (2, $format ("%m.mkAXI4ReadsWideToNarrow - data: ", fshow (data)));
+    vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow - ffs[%0d] ", rflit.rid
+                       , "- narrowAddr: ", fshow (narrowAddr)
+                       , ", wideSize: ", fshow (wideSize)
+                       , ", narrowSize: ", fshow (narrowSize)
+                       ));
+    vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow "
+                       , "- flitCnt: ", fshow (flitCnt)
+                       , ", newFlitCnt: ", fshow (newFlitCnt) ));
+    vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow "
+                       , "- currentAddr: ", fshow (currentAddr) ));
+    vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow - lanes_idx: "
+                       , fshow (lanes_idx) ));
+    Bit #(addr_t) nextAddr =
+      narrowAddr + (zeroExtend (newFlitCnt) << pack (narrowSize));
+    let sendWideFlit = (pack (wideSize) > pack (narrowSize)) ?
+      (nextAddr & ~(~0 << pack (wideSize))) == 0 : True;
+    if (sendWideFlit) begin
+      // send r flit with new data
+      let newRFlit = AXI4_RFlit { rid: rflit.rid
+                                , rdata: pack (newData)
+                                , rresp: rflit.rresp
+                                , rlast: rflit.rlast
+                                , ruser: rflit.ruser };
+      rWideSnk.put (newRFlit);
+      vPrint (1, $format ( "%m.mkAXI4ReadsWideToNarrow - wide: "
+                         , fshow (newRFlit) ));
+      // drain bookkeeping and reset flitCnt on last flit
+      if (rflit.rlast) begin
+        ffs[rflit.rid].deq;
+        newFlitCnt = 0;
+        newData = unpack (~0); // XXX for debug... TODO remove
+      end
+    end
+    // update flit counter
+    flitCnt <= newFlitCnt;
+    data <= newData;
+
+    vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow - flitCnt: "
+                       , fshow (flitCnt)
+                       , ", newFlitCnt: ", fshow (newFlitCnt) ));
+    vPrint (2, $format ( "%m.mkAXI4ReadsWideToNarrow - newData: "
+                       , fshow (newData) ));
+  endrule
+
+endmodule
+
 // Convert narrow reads to wide reads
 ////////////////////////////////////////////////////////////////////////////////
 
-// XXX TODO: currently supports awburst == INCR
+// XXX TODO: currently supports arburst == INCR
 //           undefined behaviour for WRAP and FIXED (in practice same as INCR)
 
 module mkAXI4ReadsNarrowToWide
-  // received parameters
-  #( parameter NumProxy #(buffInDepth)  proxyBuffInDepth
-   , parameter NumProxy #(buffOutDepth) proxyBuffOutDepth)
-  // returned interface
-  (Tuple4 #( Sink #(AXI4_ARFlit #(id_, addr_, aruser_))
-           , Source #(AXI4_RFlit #(id_, in_bit_t, ruser_))
-           , Source #(AXI4_ARFlit #(id_, addr_, aruser_))
-           , Sink #(AXI4_RFlit #(id_, out_bit_t, ruser_)) ))
-  provisos ( NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
-           , NumAlias #(in_byte_idx_t, TLog #(TDiv #(in_bit_t, 8)))
-           , NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
-           , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
-           , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
-           , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , Alias #(local_info, Tuple4 #( Bit #(MaxBytesSz)
-                                         , Bit #(addr_)
-                                         , AXI4_Size
-                                         , AXI4_Len ))
-           , Add #(_a, in_bit_t, out_bit_t)
-           , Add #(_b, out_byte_idx_t, MaxBytesSz)
-           , Add #(_c, in_byte_idx_t, in_bit_idx_t)
-           , Add #(_d, out_byte_idx_t, out_bit_idx_t)
-           , Add #(_e, in_byte_idx_t, out_byte_idx_t)
-           , Add #(_f, in_bit_idx_t, out_bit_idx_t)
-           , Add #(_g, out_byte_idx_t, addr_)
-           , Add #(_h, out_byte_idx_t, MaxBytesSz)
-           , Add #(_i, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
-           );
+  // received interfaces
+  #( Tuple2 #( Source #(AXI4_ARFlit #(id_t, addr_t, aruser_t))
+             , Sink #(AXI4_RFlit #(id_t, narrow_t, ruser_t)) ) narrow
+   , Tuple2 #( Sink #(AXI4_ARFlit #(id_t, addr_t, aruser_t))
+             , Source #(AXI4_RFlit #(id_t, wide_t, ruser_t)) ) wide )
+  (Empty)
+  provisos ( NumAlias #(ratio_t, TDiv #(wide_t, narrow_t))
+           , NumAlias #(lanes_idx_t, TLog #(ratio_t))
+           , Add #(_a, lanes_idx_t, addr_t)
+           , Mul #(ratio_t, narrow_t, wide_t) );
 
-  // local declarations
-  //////////////////////////////////////////////////////////////////////////////
-  // interfaces //
-  ////////////////
-  // Request channel, single flit
-  FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffIn <- mkFIFOF;
-  FIFOF #(AXI4_ARFlit #(id_, addr_, aruser_)) arffOut <- mkFIFOF;
-  // Data response channel
-  FIFOF #(AXI4_RFlit #(id_, in_bit_t, ruser_))
-    rffIn <- mkSizedFIFOF (valueOf (buffInDepth));
-  FIFOF #(AXI4_RFlit #(id_, out_bit_t, ruser_))
-    rffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
-  ////////////
-  // others //
-  ////////////
-  // local state to remember addresses
-  Vector #(TExp #(id_), FIFOF #(local_info)) localff <- replicateM (mkUGFIFOF);
+  // extract handles to interfaces
+  match {.arNarrowSrc, .rNarrowSnk} = narrow;
+  match {.arWideSnk, .rWideSrc} = wide;
+  // internal bookkeeping fifos
+  Vector #( TExp #(id_t)
+          , FIFOF #(AXI4_ARFlit #(id_t, addr_t, aruser_t)))
+    ffs <- replicateM (mkUGFIFOF);
 
-  // handle address channel
-  //////////////////////////////////////////////////////////////////////////////
-  let arflitIn = arffIn.first;
-  rule ar_send (localff[arflitIn.arid].notFull);
-    vPrint (1, $format ("%m.mkAXI4ReadsNarrowToWide.ar_send"));
-    // consume the incoming address request
-    arffIn.deq;
-    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, "
-                       , "arflitIn ", fshow (arflitIn) ));
-    // derive the new outgoing address request
-    NumProxy #(out_byte_t) proxyDstBusW = error("Don't look inside a proxy");
-    match {.nBytes, .arlenOut, .arsizeOut} <-
-      deriveAccessParams (proxyDstBusW, arflitIn.arlen, arflitIn.arsize);
-    let arflitOut = AXI4_ARFlit { arid: arflitIn.arid
-                                , araddr: arflitIn.araddr
-                                , arlen: arlenOut
-                                , arsize: arsizeOut
-                                , arburst: arflitIn.arburst
-                                , arlock: arflitIn.arlock
-                                , arcache: arflitIn.arcache
-                                , arprot: arflitIn.arprot
-                                , arqos: arflitIn.arqos
-                                , arregion: arflitIn.arregion
-                                , aruser: arflitIn.aruser };
-    // send the outgoing address request
-    arffOut.enq (arflitOut);
-    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, "
-                       , "arflitOut ", fshow (arflitOut) ));
-    // pass local information to the data channel handling rule
-    let localffpayload = tuple4 ( nBytes
-                                , arflitIn.araddr
-                                , arflitIn.arsize
-                                , arflitIn.arlen );
-    localff[arflitIn.arid].enq (localffpayload);
-    vPrint (3, $format ( "%m.mkAXI4ReadsNarrowToWide.ar_send, "
-                       , "localffpayload[%0d] "
-                       , arflitIn.arid, fshow (localffpayload) ));
+  // forward ar flits (no changes)
+  let arflit = arNarrowSrc.peek; // grab a handle on narrow ar flit
+  rule forward_ar_flit (   ffs[arflit.arid].notFull
+                        && arNarrowSrc.canPeek
+                        && arWideSnk.canPut );
+    // consume, bookkeep and produce narrow ar flit
+    arNarrowSrc.drop;
+    ffs[arflit.arid].enq(arflit);
+    arWideSnk.put (arflit);
   endrule
 
-  // handle data response channel
-  //////////////////////////////////////////////////////////////////////////////
-  Reg #(Bit #(MaxBytesSz)) cnt <- mkReg (0);
-  let rflitOut = rffOut.first;
-  let localffpayload = localff[rflitOut.rid].first;
-  match {.nBytes, .addr, .arsize, .arlen} = localffpayload;
-  rule r_accumulate_send (localff[rflitOut.rid].notEmpty);
-    vPrint (1, $format ("%m.mkAXI4ReadsNarrowToWide.r_accumulate_send"));
-    // read current local information
-    vPrint (3, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
-                       , "localffpayload[%0d] "
-                       , rflitOut.rid, fshow (localffpayload) ));
-    // read incoming data response flit
-    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
-                       , "rflitOut ", fshow (rflitOut) ));
-    // accumulate the data and book-keep
-    Bit #(out_byte_idx_t) width = 1 << pack (arsize);
-    Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
-    Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
-    Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
-    Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
-    //rspData[hiInBit:loInBit] = rflitOut.rdata[hiOutBit:loOutBit];
-    Bit #(in_bit_t) rspDataOut = truncate (rflitOut.rdata >> loOutBit);
-    // did we reach the last flit
-    Bool isLast = newCnt == nBytes;
-    // push a response
-    let rflitIn = AXI4_RFlit { rid: rflitOut.rid
-                             , rdata: rspDataOut << loInBit
-                             , rresp: rflitOut.rresp
-                             , rlast: isLast
-                             , ruser: rflitOut.ruser };
-    rffIn.enq (rflitIn);
-    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
-                       , "rflitIn ", fshow (rflitIn) ));
-    // will we consume from the returning r flits fifo?
-    Bool rffOutConsume = False;
-    // finished the burst
-    if (isLast) begin
-      vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
-                         , "last flit" ));
-      // assertions
-      // must build with the "-check-assert" flag to enable
-      dynamicAssert (rflitOut.rlast, "should line up with last r flit");
-      localff[rflitOut.rid].deq;
-      newCnt = 0;
-      rffOutConsume = True;
+  // forward r flits (no changes)
+  // XXX assumes well-formed r transfer (with consistent rid througout)
+  AXI4_RFlit #(id_t, wide_t, ruser_t) rflit = rWideSrc.peek; // rflit handle
+  let bookkeep = ffs[rflit.rid].first; // bookkeeping handle
+  let flitCnt <- mkReg (0); // consumed/produced r flit counter
+  rule forward_r_flit ( ffs[rflit.rid].notEmpty
+                       && rWideSrc.canPeek
+                       && rNarrowSnk.canPut );
+    // consume wide r flit, drain bookkeeping and reset flitCnt on last flit
+    rWideSrc.drop;
+    if (rflit.rlast) begin
+      ffs[rflit.rid].deq;
+      flitCnt <= 0;
     end
-    // full flit consumed
-    Bit #(out_byte_idx_t) cntOffset = truncate (newCnt);
-    rffOutConsume = rffOutConsume || (cntOffset == 0);
-    if (rffOutConsume) begin
-      rffOut.deq;
-      vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
-                         , "full Out flit consumed" ));
-    end
-    // state update
-    cnt <= newCnt;
-    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide.r_accumulate_send, "
-                       , "cnt (", fshow (cnt)
-                       , ") <= newCnt (", fshow (newCnt), ")" ));
+    // identify relevant lane to extract data, produce and count r flit
+    Bit #(lanes_idx_t) lanes_idx =
+      truncate ((bookkeep.araddr >> pack (bookkeep.arsize)) + flitCnt);
+    Vector #(ratio_t, Bit #(narrow_t)) data = unpack (rflit.rdata);
+    rNarrowSnk.put (AXI4_RFlit { rid: rflit.rid
+                               , rdata: data[lanes_idx]
+                               , rresp: rflit.rresp
+                               , rlast: rflit.rlast
+                               , ruser: rflit.ruser });
+    flitCnt <= flitCnt + 1;
   endrule
-
-  // return channels as interface
-  //////////////////////////////////////////////////////////////////////////////
-  return tuple4 ( toSink (arffIn), toSource (rffIn)
-                , toSource (arffOut), toSink (rffOut) );
 
 endmodule
 
