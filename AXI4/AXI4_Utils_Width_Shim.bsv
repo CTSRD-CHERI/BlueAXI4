@@ -159,6 +159,7 @@ module mkAXI4DataWidthShim_NarrowToWide
            , Add #(_h, out_byte_idx_t, MaxBytesSz)
            , Add #(_i, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
            , Add #(_j, TLog #(ratio_t), addr_)
+           , Add #(_k, TAdd #(SizeOf #(AXI4_Len), 1), addr_)
            );
   match {.aw_X, .w_X, .b_X, .aw_Y, .w_Y, .b_Y}
     <- mkAXI4WritesNarrowToWide (proxyBuffInDepth, proxyBuffOutDepth);
@@ -795,7 +796,10 @@ module mkAXI4ReadsNarrowToWide
   (Empty)
   provisos ( NumAlias #(ratio_t, TDiv #(wide_t, narrow_t))
            , NumAlias #(lanes_idx_t, TLog #(ratio_t))
+           , NumAlias #(narrow_byte_t, TDiv #(narrow_t, 8))
+           , NumAlias #(narrow_byte_idx_t, TLog #(narrow_byte_t))
            , Add #(_a, lanes_idx_t, addr_t)
+           , Add #(_b, TAdd #(SizeOf #(AXI4_Len), 1), addr_t)
            , Mul #(ratio_t, narrow_t, wide_t) );
 
   // extract handles to interfaces
@@ -811,6 +815,9 @@ module mkAXI4ReadsNarrowToWide
   rule forward_ar_flit (   ffs[arflit.arid].notFull
                         && arNarrowSrc.canPeek
                         && arWideSnk.canPut );
+    vPrint (2, $format ("%m.mkAXI4ReadsNarrowToWide - forward_ar_flit"));
+    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide "
+                       , "- ", fshow (arflit) ));
     // consume, bookkeep and produce narrow ar flit
     arNarrowSrc.drop;
     ffs[arflit.arid].enq(arflit);
@@ -818,29 +825,38 @@ module mkAXI4ReadsNarrowToWide
   endrule
 
   // forward r flits (no changes)
-  // XXX assumes well-formed r transfer (with consistent rid througout)
+  // XXX assumes well-formed r transfer (with consistent rid throughout)
   AXI4_RFlit #(id_t, wide_t, ruser_t) rflit = rWideSrc.peek; // rflit handle
   let bookkeep = ffs[rflit.rid].first; // bookkeeping handle
-  let flitCnt <- mkReg (0); // consumed/produced r flit counter
+  Reg #(Bit #(TAdd #(SizeOf #(AXI4_Len), 1))) flitCnt <- mkReg (0);
   rule forward_r_flit ( ffs[rflit.rid].notEmpty
                        && rWideSrc.canPeek
                        && rNarrowSnk.canPut );
+    vPrint (2, $format ("%m.mkAXI4ReadsNarrowToWide - forward_r_flit"));
+    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide "
+                       , "- wide: ", fshow (rflit) ));
+    let newFlitCnt = flitCnt + 1;
     // consume wide r flit, drain bookkeeping and reset flitCnt on last flit
     rWideSrc.drop;
     if (rflit.rlast) begin
       ffs[rflit.rid].deq;
-      flitCnt <= 0;
+      newFlitCnt = 0;
     end
     // identify relevant lane to extract data, produce and count r flit
+    Bit #(addr_t) currentAddr =
+      bookkeep.araddr + (zeroExtend (flitCnt) << pack (bookkeep.arsize));
     Bit #(lanes_idx_t) lanes_idx =
-      truncate ((bookkeep.araddr >> pack (bookkeep.arsize)) + flitCnt);
+      truncate (currentAddr >> valueOf (narrow_byte_idx_t));
     Vector #(ratio_t, Bit #(narrow_t)) data = unpack (rflit.rdata);
-    rNarrowSnk.put (AXI4_RFlit { rid: rflit.rid
-                               , rdata: data[lanes_idx]
-                               , rresp: rflit.rresp
-                               , rlast: rflit.rlast
-                               , ruser: rflit.ruser });
-    flitCnt <= flitCnt + 1;
+    let narrowFlit = AXI4_RFlit { rid: rflit.rid
+                                , rdata: data[lanes_idx]
+                                , rresp: rflit.rresp
+                                , rlast: rflit.rlast
+                                , ruser: rflit.ruser };
+    rNarrowSnk.put (narrowFlit);
+    vPrint (2, $format ( "%m.mkAXI4ReadsNarrowToWide "
+                       , "- narrow: ", fshow (narrowFlit) ));
+    flitCnt <= newFlitCnt;
   endrule
 
 endmodule
