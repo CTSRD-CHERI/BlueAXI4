@@ -204,91 +204,6 @@ endmodule
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-// common helpers
-////////////////////////////////////////////////////////////////////////////////
-
-// numeric type:
-// number of bits required to hold the max number of bytes in a transfer
-typedef TAdd #( // AXI4 len width + 1 because of representation is -1
-                TAdd #(SizeOf #(AXI4_Len), 1)
-                // (2^(AXI4 size width))-1 maximum shift amount
-              , TSub #(TExp #(SizeOf #(AXI4_Size)), 1) ) MaxBytesSz;
-
-// check if a known static integer is a power of 2
-function Bool isPowerOf2 (Integer x);
-  Real realX = fromInteger (x);
-  Real log2X = log2 (realX);
-  return log2X == fromInteger (ceil (log2X));
-endfunction
-
-// derive new AXI4 len and size (and total bytes accessed)
-typedef Tuple3 #(
-           Bit #(MaxBytesSz) // total number of bytes of the access
-         , AXI4_Len               // AXI4 len for the desired new bus width
-         , AXI4_Size              // AXI4 size for the desired new bus width
-         ) AccessParams;
-function ActionValue #(AccessParams)
-  deriveAccessParams ( NumProxy #(dstBusByteW) dstProxy // dest bus byte width
-                     , AXI4_Len lenIn // original AXI4 len
-                     , AXI4_Size sizeIn // original AXI4 size
-                     )
-  provisos ( NumAlias #(dstBusOffset_t, TLog #(dstBusByteW))
-           , NumAlias #(flitIdx_t, TSub #(MaxBytesSz, dstBusOffset_t))
-           , Add #(_a, dstBusOffset_t, MaxBytesSz)
-           , Add #(_b, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, dstBusOffset_t))
-           ) = actionvalue
-  // compute number of bytes in the access
-  ///////////////////////////////////////////////////////////
-  Bit #(MaxBytesSz) nBytes = (zeroExtend (lenIn) + 1) << pack (sizeIn);
-
-  // early bypass in the case the incoming size is narrower than the destination
-  // bus width
-  Bit #(MaxBytesSz) byteWidthIn = 1 << pack(sizeIn);
-  if (byteWidthIn <= fromInteger(valueOf(dstBusByteW)))
-    return tuple3 (nBytes, lenIn, sizeIn);
-  else begin
-    // compute derived values
-    ///////////////////////////////////////////////////////////
-    Bit #(dstBusOffset_t) overflow = truncate (nBytes);
-    Bit #(flitIdx_t) nFlits = truncateLSB (nBytes);
-    Bool fitsInDstBus = nBytes <= fromInteger (valueOf (dstBusByteW));
-    vPrint (4, $format ("%m.deriveAccessParams - nBytes: %0d", nBytes));
-    vPrint (4, $format ("%m.deriveAccessParams - overflow: %0d", overflow));
-    vPrint (4, $format ("%m.deriveAccessParams - nFlits: %0d", nFlits));
-    vPrint (4, $format ( "%m.deriveAccessParams - fitsInDstBus: "
-                       , fshow (fitsInDstBus) ));
-    // derive new AXI4 len and size
-    ///////////////////////////////
-    AXI4_Len lenOut = fitsInDstBus ? 0 : truncate (nFlits - 1);
-    AXI4_Size sizeOut = ?;
-    case (toAXI4_Size (truncate (nBytes))) matches
-      tagged Valid .x &&& fitsInDstBus: sizeOut = x;
-      .* &&& (overflow != 0): begin
-        sizeOut = sizeIn;
-        lenOut = lenIn;
-      end
-      .* &&& (!fitsInDstBus):
-        sizeOut = toAXI4_Size (fromInteger (valueOf (dstBusByteW))).Valid;
-      default: die ($format ("error: unsupported AXI4 size encountered"));
-    endcase
-    vPrint (4, $format ("%m.deriveAccessParams - lenOut: %0d", lenOut));
-    vPrint (4, $format ("%m.deriveAccessParams - sizeOut: %0d", sizeOut));
-
-    // a few assertions
-    ///////////////////
-    if (overflow == 0 && nFlits == 0)
-      die ($format ("error: encountered AXI4 transfer with 0 flits"));
-    if ((overflow != 0 && nFlits > 255) || nFlits > 256)
-      die ($format ("error: too long AXI4 transfer (>256 flits) encountered"));
-    if (!isPowerOf2 (valueOf (dstBusByteW)))
-      die ($format ("desired bus width should be a power of 2"));
-
-    // return results
-    /////////////////
-    return tuple3 (nBytes, lenOut, sizeOut);
-  end
-endactionvalue;
-
 // Convert wide writes to narrow writes
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -435,186 +350,74 @@ endmodule
 // Convert narrow writes to wide writes
 ////////////////////////////////////////////////////////////////////////////////
 
-// XXX TODO: currently supports awburst == INCR
-//           undefined behaviour for WRAP and FIXED (in practice same as INCR)
-
 module mkAXI4WritesNarrowToWide
-  // received parameters
-  #( parameter NumProxy #(buffInDepth)  proxyBuffInDepth
-   , parameter NumProxy #(buffOutDepth) proxyBuffOutDepth)
-  // returned interface
-  (Tuple6 #( Sink #(AXI4_AWFlit #(id_, addr_, awuser_))
-           , Sink #(AXI4_WFlit #(in_bit_t, wuser_))
-           , Source #(AXI4_BFlit #(id_, buser_))
-           , Source #(AXI4_AWFlit #(id_, addr_, awuser_))
-           , Source #(AXI4_WFlit #(out_bit_t, wuser_))
-           , Sink #(AXI4_BFlit #(id_, buser_)) ))
-  provisos ( NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
-           , NumAlias #(in_byte_idx_t, TLog #(TDiv #(in_bit_t, 8)))
-           , NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
-           , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
-           , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , Mul #(TDiv#(out_bit_t, 8), 8, out_bit_t)
-           , Div #(in_bit_t, 8, in_byte_t)
-           , Add #(_a, in_bit_t, out_bit_t)
-           , Add #(_b, TDiv#(in_bit_t, 8), TDiv#(out_bit_t, 8))
-           , Add #(_c, out_byte_idx_t, MaxBytesSz)
-           , Add #(_d, in_byte_t, out_byte_t)
-           , Add #(_e, in_byte_idx_t, in_bit_idx_t)
-           , Add #(_f, out_byte_idx_t, out_bit_idx_t)
-           , Add #(_g, in_byte_idx_t, out_byte_idx_t)
-           , Add #(_h, in_bit_idx_t, out_bit_idx_t)
-           , Add #(_i, out_byte_idx_t, addr_)
-           , Add #(_j, out_byte_idx_t, MaxBytesSz)
-           , Add #(_k, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
-           );
+  // received interfaces
+  #( Tuple3 #( Source #(AXI4_AWFlit #(id_t, addr_t, awuser_t))
+             , Source #(AXI4_WFlit #(narrow_bit_t, wuser_t))
+             , Sink #(AXI4_BFlit #(id_t, buser_t)) ) narrow
+   , Tuple3 #( Sink #(AXI4_AWFlit #(id_t, addr_t, awuser_t))
+             , Sink #(AXI4_WFlit #(wide_bit_t, wuser_t))
+             , Source #(AXI4_BFlit #(id_t, buser_t)) ) wide )
+  (Empty)
+  provisos (
+    NumAlias #(wide_byte_t, TDiv #(wide_bit_t, 8))
+  , NumAlias #(narrow_byte_t, TDiv #(narrow_bit_t, 8))
+  , NumAlias #(narrow_byte_idx_t, TLog #(narrow_byte_t))
+  , NumAlias #(lanes_idx_t, TLog #(ratio_t))
+  , NumAlias #(ratio_t, TDiv #(wide_byte_t, narrow_byte_t))
+  , Mul #(ratio_t, narrow_bit_t, wide_bit_t)
+  , Mul #(ratio_t, narrow_byte_t, wide_byte_t)
+  , Add #(_a, lanes_idx_t, addr_t)
+  , Add #(_b, TAdd #(SizeOf #(AXI4_Len), 1), addr_t)
+  );
 
-  // local declarations
-  //////////////////////////////////////////////////////////////////////////////
-  // interfaces //
-  ////////////////
-  // Address request channel, altered to account for burst size changes
-  FIFOF #(AXI4_AWFlit #(id_, addr_, awuser_)) awffIn <- mkFIFOF;
-  FIFOF #(AXI4_AWFlit #(id_, addr_, awuser_)) awffOut <- mkFIFOF;
-  // Data request channel
-  FIFOF #(AXI4_WFlit #(in_bit_t, wuser_))
-    wffIn <- mkSizedFIFOF (valueOf (buffInDepth));
-  FIFOF #(AXI4_WFlit #(out_bit_t, wuser_))
-    wffOut <- mkSizedFIFOF (valueOf (buffOutDepth));
-  // Response channel, single flit, passed straight through
-  let bff <- mkFIFOF;
-  ////////////
-  // others //
-  ////////////
-  // local communication
-  let reqff <- mkBypassFIFOF;
+  // extract handles to received interfaces
+  match {.awNarrowSrc, .wNarrowSrc, .bNarrowSnk} = narrow;
+  match {.awWideSnk, .wWideSnk, .bWideSrc} = wide;
 
-  // handle address channel
+  let ff <- mkUGFIFOF;
+
   //////////////////////////////////////////////////////////////////////////////
-  rule aw_send;
-    vPrint (1, $format ("%m.mkAXI4WritesNarrowToWide.aw_send"));
-    // read and consume the incoming address request
-    AXI4_AWFlit #(id_, addr_, awuser_) awflitIn <- get (awffIn);
-    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.aw_send, "
-                       , "awflitIn ", fshow (awflitIn) ));
-    // derive the new outgoing address request
-    NumProxy #(out_byte_t) proxyDstBusW = error("Don't look inside a proxy");
-    match {.nBytes, .awlenOut, .awsizeOut} <-
-      deriveAccessParams (proxyDstBusW, awflitIn.awlen, awflitIn.awsize);
-    let awflitOut = AXI4_AWFlit { awid: awflitIn.awid
-                                , awaddr: awflitIn.awaddr
-                                , awlen: awlenOut
-                                , awsize: awsizeOut
-                                , awburst: awflitIn.awburst
-                                , awlock: awflitIn.awlock
-                                , awcache: awflitIn.awcache
-                                , awprot: awflitIn.awprot
-                                , awqos: awflitIn.awqos
-                                , awregion: awflitIn.awregion
-                                , awuser: awflitIn.awuser };
-    // send the outgoing address request
-    awffOut.enq (awflitOut);
-    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.aw_send, "
-                       , "awflitOut ", fshow (awflitOut) ));
-    // pass local information to the data channel handling rule
-    let reqffpayload = tuple6 ( nBytes, awflitIn.awaddr
-                              , awflitIn.awsize, awflitIn.awlen
-                              , awsizeOut, awlenOut );
-    reqff.enq (reqffpayload);
-    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.aw_send, "
-                       , "reqffpayload ", fshow (reqffpayload) ));
+  rule forward_aw_flit (ff.notFull && awNarrowSrc.canPeek && awWideSnk.canPut);
+    let awflit <- get (awNarrowSrc);
+    awWideSnk.put (awflit);
+    ff.enq(awflit);
   endrule
 
-  // handle data channel
   //////////////////////////////////////////////////////////////////////////////
-  //local state
-  Reg #(Bit #(MaxBytesSz)) cnt <- mkReg (0);
-  Reg #(Bit #(out_byte_t)) strb <- mkReg (0);
-  Reg #(Bit #(out_bit_t)) data <- mkRegU;
-  rule w_accumulate_send;
-    vPrint (1, $format ("%m.mkAXI4WritesNarrowToWide.w_accumulate_send"));
-    // read current local information
-    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "reqff.first ", fshow (reqff.first) ));
-    match {.nBytes, .addr, .awsizeIn, .awlenIn, .awsizeOut, .awlenOut} =
-      reqff.first;
-    // consume incoming data flit
-    let wflitIn <- get (wffIn);
-    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "wflitIn ", fshow (wflitIn) ));
-    // derive the relevant data indices
-    Bit #(out_byte_idx_t) width = 1 << pack (awsizeIn);
-    Bit #(out_byte_idx_t) loOut = truncate (addr) + truncate (cnt);
-    Bit #(in_byte_idx_t) loIn = truncate (loOut);
-    Bit #(out_bit_idx_t) loOutBit = zeroExtend (loOut) << 3;
-    Bit #(in_bit_idx_t) loInBit = truncate (loOutBit);
-    // accumulate the data and book-keep
-    Bit #(MaxBytesSz) newCnt = cnt + zeroExtend (width);
-    //tmpStrb[hiOut:loOut] = wflitIn.wstrb[hiIn:loIn];
-    //tmpData[hiOutBit:loOutBit] = wflitIn.wdata[hiInBit:loInBit];
-    Bit #(out_byte_t) msk = ~(~0 << width) << loOut;
-    Bit #(in_byte_t) tmpStrbIn = wflitIn.wstrb >> loIn;
-    Bit #(out_byte_t) tmpStrbOut = zeroExtend (tmpStrbIn) << loOut;
-    Bit #(out_byte_t) newStrb = mergeWithMask (msk, strb, tmpStrbOut);
-    Bit #(in_bit_t) tmpDataIn = wflitIn.wdata >> loInBit;
-    Bit #(out_bit_t) tmpDataOut = zeroExtend (tmpDataIn) << loOutBit;
-    Bit #(out_bit_t) newData = mergeWithBE (msk, data, tmpDataOut);
-    // did we reach the last flit
-    Bool isLast = newCnt == nBytes;
-    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "newCnt ", fshow (newCnt) ));
-    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "nBytes ", fshow (nBytes) ));
-    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "isLast ", fshow (isLast) ));
-    // full flit ready
-    Bit #(out_byte_idx_t) cntOffset = truncate (newCnt);
-    Bit #(out_byte_idx_t) cntMask = ~(~0 << pack (awsizeOut));
-    vPrint (3, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "cntOffset ", fshow (cntOffset) ));
-    if (isLast || (cntOffset & cntMask) == 0) begin
-      let wflitOut =  AXI4_WFlit { wdata: newData
-                                 , wstrb: newStrb
-                                 , wlast: isLast
-                                   // XXX better thing to do here?
-                                 , wuser: wflitIn.wuser
-                                 };
-      wffOut.enq (wflitOut);
-      vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                         , "wflitOut ", fshow (wflitOut) ));
-      newData = 0;
-      newStrb = 0;
+  Reg #(Bit #(TAdd #(SizeOf #(AXI4_Len), 1))) flitCnt <- mkReg (0);
+  rule forward_w_flit (ff.notEmpty && wNarrowSrc.canPeek && wWideSnk.canPut);
+    let awflit = ff.first;
+    let narrowFlit <- get (wNarrowSrc);
+    // identify relevant lanes index
+    Bit #(addr_t) currentAddr =
+      awflit.awaddr + (zeroExtend (flitCnt) << pack (awflit.awsize));
+    Bit #(lanes_idx_t) lanes_idx =
+      truncate (currentAddr >> valueOf (narrow_byte_idx_t));
+    Vector #(ratio_t, Bit #(narrow_bit_t)) wideData = ?;
+    Vector #(ratio_t, Bit #(narrow_byte_t)) wideStrb = unpack (0);
+    wideData[lanes_idx] = narrowFlit.wdata;
+    wideStrb[lanes_idx] = narrowFlit.wstrb;
+    let wideFlit = AXI4_WFlit { wdata: pack (wideData)
+                              , wstrb: pack (wideStrb)
+                              , wlast: narrowFlit.wlast
+                              , wuser: narrowFlit.wuser
+                              };
+    wWideSnk.put (wideFlit);
+    let newFlitCnt = flitCnt + 1;
+    if (narrowFlit.wlast) begin
+      ff.deq;
+      newFlitCnt = 0;
     end
-    // finished the burst
-    if (isLast) begin
-      vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                         , "burst finished"));
-      // assertions
-      // must build with the "-check-assert" flag to enable
-      dynamicAssert (wflitIn.wlast, "should line up with last w flit");
-      // consume local information
-      reqff.deq;
-      newCnt = 0;
-    end
-    // accumulate state
-    cnt <= newCnt;
-    data <= newData;
-    strb <= newStrb;
-    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "cnt (", fshow (cnt)
-                       , ") <= newCnt (", fshow (newCnt), ")" ));
-    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "data (", fshow (data)
-                       , ") <= newData (", fshow (newData), ")" ));
-    vPrint (2, $format ( "%m.mkAXI4WritesNarrowToWide.w_accumulate_send, "
-                       , "strb (", fshow (strb)
-                       , ") <= newStrb (", fshow (newStrb), ")" ));
+    flitCnt <= newFlitCnt;
   endrule
 
-  // return channels as interface
   //////////////////////////////////////////////////////////////////////////////
-  return tuple6 ( toSink (awffIn), toSink (wffIn), toSource (bff)
-                , toSource (awffOut), toSource(wffOut), toSink (bff) );
+  rule forward_b_flit (bWideSrc.canPeek && bNarrowSnk.canPut);
+    let bflit <- get (bWideSrc);
+    bNarrowSnk.put (bflit);
+  endrule
+
 
 endmodule
 
