@@ -36,6 +36,7 @@ import BlueAXI4 :: *;
 import BlueUtils :: *;
 import BlueBasics :: *;
 import Connectable :: *;
+import Vector :: *;
 import FIFOF :: *;
 import FIFO :: *;
 import List :: *;
@@ -54,13 +55,11 @@ function Action die (Fmt fmt) = action
   $finish;
 endaction;
 
-module mkRNG #(a seed) (Get #(a)) provisos (Bits #(a, sz), Arith #(a));
+module mkRNG #(a seed) (Source #(a)) provisos (Bits #(a, sz), Arith #(a));
   let state <- mkReg (seed);
-  method get = actionvalue
-    let newState = state * 6364136223846793005 + 1;
-    state <= newState;
-    return newState;
-  endactionvalue;
+  method canPeek = True;
+  method peek = state;
+  method drop = action state <= state * 6364136223846793005 + 1; endaction;
 endmodule
 
 module mkListToSource #(List #(t) xs) (Source #(Maybe #(t)))
@@ -73,80 +72,6 @@ module mkListToSource #(List #(t) xs) (Source #(Maybe #(t)))
     i <= i + 1;
   endrule
   return toSource (ff);
-endmodule
-
-////////////////////////////////////////////////////////////////////////////////
-
-module writeAXI4_Slave #(
-    List #(Bit #(n)) all_data
-  , Bit #(t_addr) start_addr
-  , AXI4_Slave #( t_id, t_addr, t_data
-                , t_awuser, t_wuser, t_buser
-                , t_aruser, t_ruser ) slv
-  ) (RecipeFSM) provisos (
-    Add #(_a, n, t_data)
-  , Add #(_b, TLog #(TDiv #(t_data, n)), t_addr)
-  );
-
-  Reg #(Bit #(t_addr)) flitIdx <- mkReg (0);
-  Source #(Maybe #(Bit #(n))) dataSrc <- mkListToSource (all_data);
-  Integer nBits = valueOf (n);
-  Integer nBytes = nBits / 8;
-  let fsm <- mkRecipeFSM (rSeq(rBlock(
-      rAct (action
-        AXI4_AWFlit #(t_id, t_addr, t_awuser) awflit = AXI4_AWFlit {
-            awaddr: start_addr
-          , awid: 0
-          , awsize: fromInteger (nBytes)
-          , awlen: fromInteger (length (all_data))
-          , awregion: 0
-          , awburst: INCR
-          , awprot: 0
-          , awcache: 0
-          , awlock: ?
-          , awqos: 0
-          , awuser: 0
-          };
-        slv.aw.put (awflit);
-        vPrint(5, $format("writeAXI4_Slave - sent ", fshow (awflit)));
-      endaction)
-    , rWhile (flitIdx < fromInteger (length (all_data)), rSeq (rBlock (
-        rWhile (!dataSrc.canPeek, rAct (
-          vPrint(6, $format("writeAXI4_Slave - waiting for data to send"))
-        ))
-      , rWhen (isValid (dataSrc.peek),
-          rAct (action
-            Maybe #(Bit #(n)) data <- get (dataSrc);
-            Bit #(t_addr) addr = start_addr + (flitIdx << log2 (nBytes));
-            Bit #(TLog #(TDiv #(t_data, n))) lanes_idx =
-              truncate (addr >> log2 (nBytes));
-            Bit #(t_addr) wide_lanes_idx = zeroExtend (lanes_idx);
-            AXI4_WFlit #(t_data, t_wuser) wflit = AXI4_WFlit {
-                wdata:
-                  zeroExtend (data.Valid) << (fromInteger (nBits) * wide_lanes_idx)
-              , wstrb:
-                  ~(~0 << nBytes) << (fromInteger (nBytes) * wide_lanes_idx)
-              , wlast:
-                  flitIdx == fromInteger (length (all_data) - 1)
-              , wuser: 0
-              };
-            slv.w.put (wflit);
-            flitIdx <= flitIdx + 1;
-            vPrint(5, $format("writeAXI4_Slave - sent ", fshow (wflit)));
-            vPrint(6, $format( "writeAXI4_Slave "
-                             , "- flitIdx <= ", fshow (flitIdx + 1) ));
-          endaction))
-      )))
-    , rWhile (!slv.b.canPeek, rAct(
-        vPrint(6, $format("writeAXI4_Slave - waiting for b flit"))
-      ))
-    , rAct(action
-        let bflit <- get (slv.b);
-        vPrint(6, $format("writeAXI4_Slave - received ", fshow (bflit)));
-      endaction)
-  )));
-  return fsm;
-
 endmodule
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -311,6 +236,8 @@ List #(Bit #(32)) mem_setup_values = list (
 , 'h76543210
 );
 
+Bit #(512) mem_setup_value = 512'h01234567_89abcdef_02468ace_13579bdf_048c26ae_159d37bf_082a4c6e_193b5d7f_fedcba98_76543210_00000001_11111112_22222223_33333334_fedcba98_76543210;
+
 // flit parameters to test
 function List #(Tuple3 #(Integer, Integer, Integer))
   genFlitParams (Integer memBytes, Integer maxByteWidth);
@@ -321,7 +248,7 @@ function List #(Tuple3 #(Integer, Integer, Integer))
     for (Integer size = 1; size <= maxSize; size = size * 2) begin
       Integer maxLen = remain / size;
       for (Integer len = 1; len <= maxLen; len = len + 1) begin
-        flitParams = cons (tuple3 (offset, size, len), flitParams);
+        flitParams = List::cons (tuple3 (offset, size, len), flitParams);
       end
     end
   end
@@ -337,11 +264,92 @@ function Tuple3 #(Bit #(n), AXI4_Size, AXI4_Len)
                 , fromInteger (len - 1) );
 endfunction
 
+module writeAXI4_Slave #(
+    Bit #(t_addr) start_addr
+  , Tuple3 #(Bit #(n), AXI4_Size, AXI4_Len) params
+  , Bit #(t_all_data) all_data
+  , AXI4_Slave #( t_id, t_addr, t_data
+                , t_awuser, t_wuser, t_buser
+                , t_aruser, t_ruser ) slv
+  ) (RecipeFSM) provisos (
+    NumAlias #(t_ratio, TDiv #(t_all_data, t_data))
+  , Mul #(t_ratio, t_data, t_all_data)
+  , Add #(_a, TLog #(t_ratio), t_addr)
+  , Add #(_b, TLog #(TDiv #(t_data, 8)), t_addr)
+  , Add #(_c, TAdd #(SizeOf #(AXI4_Len), 1), t_addr)
+  , Add #(_d, n, t_addr)
+  );
+  Reg #(Bit #(TAdd #(SizeOf #(AXI4_Len), 1))) flitCnt <- mkRegU;
+  match {.offset, .size, .len} = params;
+  // state machine
+  let fsm <- mkRecipeFSM (rSeq (rBlock (
+    action
+      vPrint(4, $format("writeAXI4_Slave - resetting"));
+      flitCnt <= 0;
+      if (fromAXI4_Size (size) > fromInteger (valueOf(t_data) / 8))
+        die ($format ("writeAXI4_Slave: invalid AXI4 size ", fshow (size)));
+    endaction
+  , action
+      AXI4_AWFlit #(t_id, t_addr, t_awuser) awflit = AXI4_AWFlit {
+        awaddr: start_addr + zeroExtend (offset)
+      , awid: 0
+      , awsize: size
+      , awlen: len
+      , awregion: 0
+      , awburst: INCR
+      , awprot: 0
+      , awcache: 0
+      , awlock: ?
+      , awqos: 0
+      , awuser: 0
+      };
+      slv.aw.put (awflit);
+      vPrint(5, $format("writeAXI4_Slave - sent ", fshow (awflit)));
+    endaction
+  , rWhile (flitCnt <= zeroExtend (len),
+      rAct (action
+        Bit #(t_addr) currentAddr =
+          start_addr + zeroExtend (offset) + (zeroExtend (flitCnt) << pack (size));
+        Bit #(TLog #(t_ratio)) lanes_idx =
+          truncate (currentAddr >> log2 (valueOf (t_data) / 8));
+        Vector #(t_ratio, Bit #(t_data)) data = unpack (all_data);
+        Bit #(TLog #(TDiv #(t_data, 8))) byteOffset = truncate (currentAddr);
+        // mask out relevant subset of all_data
+        Bit #(t_addr) addrMask = ~(~0 << pack (size));
+        AXI4_WFlit #(t_data, t_wuser) wflit = AXI4_WFlit {
+          wdata: data[lanes_idx]
+        , wstrb: ~(~0 << pack (size)) << byteOffset
+        , wlast: flitCnt == zeroExtend (len)
+        , wuser: 0
+        };
+        slv.w.put (wflit);
+        flitCnt <= flitCnt + 1;
+        vPrint(5, $format("writeAXI4_Slave - sent ", fshow (wflit)));
+        vPrint(6, $format( "writeAXI4_Slave "
+                         , "- flitCnt <= ", fshow (flitCnt + 1) ));
+      endaction)
+    )
+  , rWhile (!slv.b.canPeek, rAct (action
+      vPrint(5, $format("writeAXI4_Slave - wait for b flit"));
+    endaction))
+  , action
+      let bflit <- get (slv.b);
+      vPrint(5, $format("writeAXI4_Slave - consume b flit: ", fshow (bflit)));
+    endaction
+  )));
+  return fsm;
+endmodule
+
 // test reads from wide interface to narrow interface
 module testReadWideToNarrow (Empty);
   // golden memory
   AXI4_Slave #(0, 16, 512, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
-  let setupGolden <- writeAXI4_Slave (mem_setup_values, 0, goldenMem);
+  let setupGolden <- writeAXI4_Slave (
+      0
+    , tuple3 (8'h0, toAXI4_Size (64).Valid, 0)
+    , mem_setup_value
+    , goldenMem
+    );
   // dut memory
   AXI4_Slave #(0, 16, 64, 0, 0, 0, 0, 0) dutMem <- mkAXI4Mem (512, UnInit);
   NumProxy#(1) one = ?;
@@ -350,10 +358,15 @@ module testReadWideToNarrow (Empty);
     wide2narrow <- mkAXI4DataWidthShim_WideToNarrow (one, one);
   match {.dutSlave, .dutMaster} = wide2narrow;
   mkConnection (dutMaster, dutMem);
-  let setupDUT <- writeAXI4_Slave (mem_setup_values, 0, dutSlave);
+  let setupDUT <- writeAXI4_Slave (
+      0
+    , tuple3 (8'h0, toAXI4_Size (64).Valid, 0)
+    , mem_setup_value
+    , dutSlave
+    );
   // run test
   let reqParams =
-    map (toAXI4_Params, genFlitParams (valueOf(512)/8, valueOf(512)/8));
+    List::map (toAXI4_Params, genFlitParams (valueOf(512)/8, valueOf(512)/8));
   let paramSrc <- mkListToSource (reqParams);
   let stimuli <- mkReadStimuliFSM (goldenMem, dutSlave, paramSrc);
   let fsm <- mkRecipeFSM (rSeq(rBlock(
@@ -374,7 +387,12 @@ endmodule
 module testReadNarrowToWide (Empty);
   // golden memory
   AXI4_Slave #(0, 16, 64, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
-  let setupGolden <- writeAXI4_Slave (mem_setup_values, 0, goldenMem);
+  let setupGolden <- writeAXI4_Slave (
+      0
+    , tuple3 (8'h0, toAXI4_Size (8).Valid, 7)
+    , mem_setup_value
+    , goldenMem
+    );
   // dut memory
   AXI4_Slave #(0, 16, 512, 0, 0, 0, 0, 0) dutMem <- mkAXI4Mem (512, UnInit);
   NumProxy#(1) one = ?;
@@ -383,10 +401,15 @@ module testReadNarrowToWide (Empty);
     narrow2wide <- mkAXI4DataWidthShim_NarrowToWide (one, one);
   match {.dutSlave, .dutMaster} = narrow2wide;
   mkConnection (dutMaster, dutMem);
-  let setupDUT <- writeAXI4_Slave (mem_setup_values, 0, dutSlave);
+  let setupDUT <- writeAXI4_Slave (
+      0
+    , tuple3 (8'h0, toAXI4_Size (8).Valid, 7)
+    , mem_setup_value
+    , dutSlave
+    );
   // run test
   let reqParams =
-    map (toAXI4_Params, genFlitParams (valueOf(512)/8, valueOf(64)/8));
+    List::map (toAXI4_Params, genFlitParams (valueOf(512)/8, valueOf(64)/8));
   let paramSrc <- mkListToSource (reqParams);
   let stimuli <- mkReadStimuliFSM (goldenMem, dutSlave, paramSrc);
   let fsm <- mkRecipeFSM (rSeq(rBlock(
