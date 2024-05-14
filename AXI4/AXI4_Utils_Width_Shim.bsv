@@ -148,54 +148,65 @@ module mkAXI4DataWidthShim_NarrowToWide
   #( parameter NumProxy #(buffInDepth)  proxyBuffInDepth
    , parameter NumProxy #(buffOutDepth) proxyBuffOutDepth )
   // returned interface
-  (Tuple2 #( AXI4_Slave  #( id_, addr_, in_bit_t
-                          , awuser_, wuser_, buser_, aruser_, ruser_ )
-           , AXI4_Master #( id_, addr_, out_bit_t
-                          , awuser_, wuser_, buser_, aruser_, ruser_ )))
-  provisos ( NumAlias #(out_byte_t, TDiv #(out_bit_t, 8))
-           , NumAlias #(out_bit_idx_t, TLog #(out_bit_t))
-           , NumAlias #(out_byte_idx_t, TLog #(out_byte_t))
-           , NumAlias #(in_byte_t, TDiv #(in_bit_t, 8))
-           , NumAlias #(in_bit_idx_t, TLog #(in_bit_t))
-           , NumAlias #(in_byte_idx_t, TLog #(in_byte_t))
-           , NumAlias #(ratio_t, TDiv #(out_bit_t, in_bit_t))
-           , Mul #(out_byte_t, 8, out_bit_t)
-           , Mul #(ratio_t, in_bit_t, out_bit_t)
-           , Add #(_a, in_bit_t, out_bit_t)
-           , Add #(_b, in_byte_t, out_byte_t)
-           , Add #(_c, in_byte_idx_t, out_byte_idx_t)
-           , Add #(_d, in_byte_idx_t, in_bit_idx_t)
-           , Add #(_e, out_byte_idx_t, out_bit_idx_t)
-           , Add #(_f, out_byte_idx_t, addr_)
-           , Add #(_g, in_bit_idx_t, out_bit_idx_t)
-           , Add #(_h, out_byte_idx_t, MaxBytesSz)
-           , Add #(_i, SizeOf #(AXI4_Len), TSub #(MaxBytesSz, out_byte_idx_t))
-           , Add #(_j, TLog #(ratio_t), addr_)
-           , Add #(_k, TAdd #(SizeOf #(AXI4_Len), 1), addr_)
-           );
-  match {.aw_X, .w_X, .b_X, .aw_Y, .w_Y, .b_Y}
-    <- mkAXI4WritesNarrowToWide (proxyBuffInDepth, proxyBuffOutDepth);
+  (Tuple2 #( AXI4_Slave  #( id_t, addr_t, narrow_bit_t
+                          , awuser_t, wuser_t, buser_t, aruser_t, ruser_t )
+           , AXI4_Master #( id_t, addr_t, wide_bit_t
+                          , awuser_t, wuser_t, buser_t, aruser_t, ruser_t )))
+  provisos (
+    NumAlias #(wide_byte_t, TDiv #(wide_bit_t, 8))
+  , NumAlias #(narrow_byte_t, TDiv #(narrow_bit_t, 8))
+  , NumAlias #(narrow_byte_idx_t, TLog #(narrow_byte_t))
+  , NumAlias #(lanes_idx_t, TLog #(ratio_t))
+  , NumAlias #(ratio_t, TDiv #(wide_byte_t, narrow_byte_t))
+  , Mul #(ratio_t, narrow_bit_t, wide_bit_t)
+  , Mul #(ratio_t, narrow_byte_t, wide_byte_t)
+  , Add #(_a, lanes_idx_t, addr_t)
+  , Add #(_b, TAdd #(SizeOf #(AXI4_Len), 1), addr_t)
+  );
+
+  // narrow shims
+  let awNarrow <- mkSourceSinkShimBypassFF1;
+  let  wNarrow <- mkSourceSinkShimBypassFF1;
+  let  bNarrow <- mkSourceSinkShimBypassFF1;
   let arNarrow <- mkSourceSinkShimBypassFF1;
-  let rNarrow <- mkSourceSinkShimBypassFF1;
+  let  rNarrow <- mkSourceSinkShimBypassFF1;
+
+  // wide shims
+  let awWide <- mkSourceSinkShimBypassFF1;
+  let  wWide <- mkSourceSinkShimBypassFF1;
+  let  bWide <- mkSourceSinkShimBypassFF1;
   let arWide <- mkSourceSinkShimBypassFF1;
-  let rWide <- mkSourceSinkShimBypassFF1;
-  mkAXI4ReadsNarrowToWide ( tuple2 (arNarrow.source, rNarrow.sink)
-                          , tuple2 (arWide.sink, rWide.source) );
+  let  rWide <- mkSourceSinkShimBypassFF1;
+
+  // connect up write channels
+  mkAXI4WritesNarrowToWide (
+    tuple3 (awNarrow.source, wNarrow.source, bNarrow.sink)
+  , tuple3 (awWide.sink, wWide.sink, bWide.source)
+  );
+
+  // connect up read channels
+  mkAXI4ReadsNarrowToWide (
+    tuple2 (arNarrow.source, rNarrow.sink)
+  , tuple2 (arWide.sink, rWide.source)
+  );
+
+  // export interfaces
   return tuple2 (
     interface AXI4_Slave;
-      interface aw = aw_X;
-      interface  w = w_X;
-      interface  b = b_X;
+      interface aw = awNarrow.sink;
+      interface  w = wNarrow.sink;
+      interface  b = bNarrow.source;
       interface ar = arNarrow.sink;
       interface  r = rNarrow.source;
     endinterface
   , interface AXI4_Master;
-      interface aw = aw_Y;
-      interface  w = w_Y;
-      interface  b = b_Y;
+      interface aw = awWide.source;
+      interface  w = wWide.source;
+      interface  b = bWide.sink;
       interface ar = arWide.source;
       interface  r = rWide.sink;
     endinterface );
+
 endmodule
 
 /////////////////////
