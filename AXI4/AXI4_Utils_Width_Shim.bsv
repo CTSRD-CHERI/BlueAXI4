@@ -785,17 +785,21 @@ endmodule
 module mkAXI4ReadsNarrowToWide
   // received interfaces
   #( Tuple2 #( Source #(AXI4_ARFlit #(id_t, addr_t, aruser_t))
-             , Sink #(AXI4_RFlit #(id_t, narrow_t, ruser_t)) ) narrow
+             , Sink #(AXI4_RFlit #(id_t, narrow_bit_t, ruser_t)) ) narrow
    , Tuple2 #( Sink #(AXI4_ARFlit #(id_t, addr_t, aruser_t))
-             , Source #(AXI4_RFlit #(id_t, wide_t, ruser_t)) ) wide )
+             , Source #(AXI4_RFlit #(id_t, wide_bit_t, ruser_t)) ) wide )
   (Empty)
-  provisos ( NumAlias #(ratio_t, TDiv #(wide_t, narrow_t))
-           , NumAlias #(lanes_idx_t, TLog #(ratio_t))
-           , NumAlias #(narrow_byte_t, TDiv #(narrow_t, 8))
-           , NumAlias #(narrow_byte_idx_t, TLog #(narrow_byte_t))
-           , Add #(_a, lanes_idx_t, addr_t)
-           , Add #(_b, TAdd #(SizeOf #(AXI4_Len), 1), addr_t)
-           , Mul #(ratio_t, narrow_t, wide_t) );
+  provisos (
+    NumAlias #(wide_byte_t, TDiv #(wide_bit_t, 8))
+  , NumAlias #(wide_byte_idx_t, TLog #(wide_byte_t))
+  , NumAlias #(narrow_byte_t, TDiv #(narrow_bit_t, 8))
+  , NumAlias #(narrow_byte_idx_t, TLog #(narrow_byte_t))
+  , NumAlias #(ratio_t, TDiv #(wide_byte_t, narrow_byte_t))
+  , NumAlias #(lanes_idx_t, TLog #(ratio_t))
+  , Mul #(ratio_t, narrow_bit_t, wide_bit_t)
+  , Add #(_a, lanes_idx_t, addr_t)
+  , Add #(_b, TAdd #(SizeOf #(AXI4_Len), 1), addr_t)
+  );
 
   // extract handles to interfaces
   match {.arNarrowSrc, .rNarrowSnk} = narrow;
@@ -821,7 +825,7 @@ module mkAXI4ReadsNarrowToWide
 
   // forward r flits (no changes)
   // XXX assumes well-formed r transfer (with consistent rid throughout)
-  AXI4_RFlit #(id_t, wide_t, ruser_t) rflit = rWideSrc.peek; // rflit handle
+  AXI4_RFlit #(id_t, wide_bit_t, ruser_t) rflit = rWideSrc.peek; // rflit handle
   let bookkeep = ffs[rflit.rid].first; // bookkeeping handle
   Reg #(Bit #(TAdd #(SizeOf #(AXI4_Len), 1))) flitCnt <- mkReg (0);
   rule forward_r_flit ( ffs[rflit.rid].notEmpty
@@ -842,7 +846,7 @@ module mkAXI4ReadsNarrowToWide
       bookkeep.araddr + (zeroExtend (flitCnt) << pack (bookkeep.arsize));
     Bit #(lanes_idx_t) lanes_idx =
       truncate (currentAddr >> valueOf (narrow_byte_idx_t));
-    Vector #(ratio_t, Bit #(narrow_t)) data = unpack (rflit.rdata);
+    Vector #(ratio_t, Bit #(narrow_bit_t)) data = unpack (rflit.rdata);
     let narrowFlit = AXI4_RFlit { rid: rflit.rid
                                 , rdata: data[lanes_idx]
                                 , rresp: rflit.rresp
