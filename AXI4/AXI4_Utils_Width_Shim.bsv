@@ -95,28 +95,33 @@ module mkAXI4DataWidthShim_WideToNarrow
   , Add #(_b, TAdd #(SizeOf #(AXI4_Len), 1), addr_t)
   );
 
-  // Write channels
+  // wide shims
   let awWide <- mkSourceSinkShimBypassFF1;
-  let wWide <- mkSourceSinkShimBypassFF1;
-  let bWide <- mkSourceSinkShimBypassFF1;
+  let  wWide <- mkSourceSinkShimBypassFF1;
+  let  bWide <- mkSourceSinkShimBypassFF1;
+  let arWide <- mkSourceSinkShimBypassFF1;
+  let  rWide <- mkSourceSinkShimBypassFF1;
+
+  // narrow shims
   let awNarrow <- mkSourceSinkShimBypassFF1;
-  let wNarrow <- mkSourceSinkShimBypassFF1;
-  let bNarrow <- mkSourceSinkShimBypassFF1;
+  let  wNarrow <- mkSourceSinkShimBypassFF1;
+  let  bNarrow <- mkSourceSinkShimBypassFF1;
+  let arNarrow <- mkSourceSinkShimBypassFF1;
+  let  rNarrow <- mkSourceSinkShimBypassFF1;
+
+  // connect up write channels
   mkAXI4WritesWideToNarrow (
     tuple3 (awWide.source, wWide.source, bWide.sink)
   , tuple3 (awNarrow.sink, wNarrow.sink, bNarrow.source)
   );
 
-  // Read channels
-  let arWide <- mkSourceSinkShimBypassFF1;
-  let rWide <- mkSourceSinkShimBypassFF1;
-  let arNarrow <- mkSourceSinkShimBypassFF1;
-  let rNarrow <- mkSourceSinkShimBypassFF1;
+  // connect up read channels
   mkAXI4ReadsWideToNarrow (
     tuple2 (arWide.source, rWide.sink)
   , tuple2 (arNarrow.sink, rNarrow.source)
   );
 
+  // export interfaces
   return tuple2 (
     interface AXI4_Slave;
       interface aw = awWide.sink;
