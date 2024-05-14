@@ -15,7 +15,7 @@ BSCFLAGS += -bdir $(BDIR)
 BSCFLAGS += -simdir $(SIMDIR)
 BSCFLAGS += -suppress-warnings T0127:S0080 # no orphan typeclass warning
 
-all: testReadWideToNarrow
+all: testReadWideToNarrow testReadNarrowToWide
 #all: AXI4ReadWidthsExample AXI4WriteWidthsExample
 
 $(SIMDIR):
@@ -25,9 +25,9 @@ testReadWideToNarrow: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
 	$(BSC) $(BSCFLAGS) -check-assert -sim -g testReadWideToNarrow -u $<
 	$(BSC) $(BSCFLAGS) -check-assert -sim -e testReadWideToNarrow -Xl $(SIMDIR)/MemSim.o -o $@
 
-#testReadNarrowToWide: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
-#	$(BSC) $(BSCFLAGS) -check-assert -sim -g testReadNarrowToWide -u $<
-#	$(BSC) $(BSCFLAGS) -check-assert -sim -e testReadNarrowToWide -Xl $(SIMDIR)/MemSim.o -o $@
+testReadNarrowToWide: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
+	$(BSC) $(BSCFLAGS) -check-assert -sim -g testReadNarrowToWide -u $<
+	$(BSC) $(BSCFLAGS) -check-assert -sim -e testReadNarrowToWide -Xl $(SIMDIR)/MemSim.o -o $@
 
 AXI4ReadWidthsExample: AXI4WidthsExample.bsv $(SIMDIR) $(SIMDIR)/MemSim.o
 	$(BSC) $(BSCFLAGS) -check-assert -sim -g testAXI4ReadWidths -u $<
@@ -45,7 +45,6 @@ CCFLAGS = -O3  -Wall -Wno-unused -D_FILE_OFFSET_BITS=64 -fPIC
 .PHONY: clean
 
 clean:
-	rm -f testReadWideToNarrow
-	rm -f AXI4*WidthsExample
-	rm -f AXI4*WidthsExample.so
+	rm -f testReadWideToNarrow*
+	rm -f testReadNarrowToWide*
 	rm -rf $(BUILDDIR)
