@@ -631,20 +631,21 @@ endmodule
 module mkAXI4ReadsWideToNarrow
   // received interfaces
   #( Tuple2 #( Source #(AXI4_ARFlit #(id_t, addr_t, aruser_t))
-             , Sink #(AXI4_RFlit #(id_t, wide_t, ruser_t)) ) wide
+             , Sink #(AXI4_RFlit #(id_t, wide_bit_t, ruser_t)) ) wide
    , Tuple2 #( Sink #(AXI4_ARFlit #(id_t, addr_t, aruser_t))
-             , Source #(AXI4_RFlit #(id_t, narrow_t, ruser_t)) ) narrow )
+             , Source #(AXI4_RFlit #(id_t, narrow_bit_t, ruser_t)) ) narrow )
   (Empty)
-  provisos ( NumAlias #(ratio_t, TDiv #(wide_t, narrow_t))
-           , NumAlias #(lanes_idx_t, TLog #(ratio_t))
-           , NumAlias #(narrow_byte_t, TDiv #(narrow_t, 8))
-           , NumAlias #(wide_byte_t, TDiv #(wide_t, 8))
-           , NumAlias #(narrow_byte_idx_t, TLog #(narrow_byte_t))
-           , NumAlias #(wide_byte_idx_t, TLog #(wide_byte_t))
-           , Add #(_a, lanes_idx_t, addr_t)
-           , Add #(_b, TAdd #(SizeOf #(AXI4_Len), 1), addr_t)
-           , Mul #(ratio_t, narrow_t, wide_t)
-           );
+  provisos (
+    NumAlias #(wide_byte_t, TDiv #(wide_bit_t, 8))
+  , NumAlias #(wide_byte_idx_t, TLog #(wide_byte_t))
+  , NumAlias #(narrow_byte_t, TDiv #(narrow_bit_t, 8))
+  , NumAlias #(narrow_byte_idx_t, TLog #(narrow_byte_t))
+  , NumAlias #(ratio_t, TDiv #(wide_byte_t, narrow_byte_t))
+  , NumAlias #(lanes_idx_t, TLog #(ratio_t))
+  , Mul #(ratio_t, narrow_bit_t, wide_bit_t)
+  , Add #(_a, lanes_idx_t, addr_t)
+  , Add #(_b, TAdd #(SizeOf #(AXI4_Len), 1), addr_t)
+  );
 
   // extract handles to received interfaces
   match {.arWideSrc, .rWideSnk} = wide;
@@ -713,10 +714,10 @@ module mkAXI4ReadsWideToNarrow
 
   // forward r flits (accumulate if necessary)
   // XXX assumes well-formed r transfer (with consistent rid througout)
-  AXI4_RFlit #(id_t, narrow_t, ruser_t) rflit = rNarrowSrc.peek;
+  AXI4_RFlit #(id_t, narrow_bit_t, ruser_t) rflit = rNarrowSrc.peek;
   match {.narrowAddr, .wideSize, .narrowSize} = ffs[rflit.rid].first;
   Reg #(Bit #(TAdd #(SizeOf #(AXI4_Len), 1))) flitCnt <- mkReg (0);
-  Reg #(Vector #(ratio_t, Bit #(narrow_t))) data <- mkRegU; // accumulated data
+  Reg #(Vector #(ratio_t, Bit #(narrow_bit_t))) data <- mkRegU; // accumulated data
 
   rule accumulate_r_flit (   ffs[rflit.rid].notEmpty
                           && rWideSnk.canPut
@@ -732,7 +733,7 @@ module mkAXI4ReadsWideToNarrow
       narrowAddr + (zeroExtend (flitCnt) << pack (narrowSize));
     Bit #(lanes_idx_t) lanes_idx =
       truncate (currentAddr >> valueOf (narrow_byte_idx_t));
-    Vector #(ratio_t, Bit #(narrow_t)) newData = data;
+    Vector #(ratio_t, Bit #(narrow_bit_t)) newData = data;
     newData[lanes_idx] = rflit.rdata;
     vPrint (2, $format ("%m.mkAXI4ReadsWideToNarrow - data: ", fshow (data)));
     vPrint (3, $format ( "%m.mkAXI4ReadsWideToNarrow - ffs[%0d] ", rflit.rid
