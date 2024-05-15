@@ -90,6 +90,89 @@ function Bit #(t_data) getRelevantData ( Bit #(t_data) data
   return shiftedData & mask;
 endfunction
 
+module writeAXI4_Slave #(
+    Bit #(t_addr) start_addr
+  , Tuple3 #(Bit #(n), AXI4_Size, AXI4_Len) params
+  , Bit #(t_all_data) all_data
+  , AXI4_Slave #( t_id, t_addr, t_data
+                , t_awuser, t_wuser, t_buser
+                , t_aruser, t_ruser ) slv
+  ) (RecipeFSM) provisos (
+    NumAlias #(t_ratio, TDiv #(t_all_data, t_data))
+  , Mul #(t_ratio, t_data, t_all_data)
+  , Add #(_a, TLog #(t_ratio), t_addr)
+  , Add #(_b, TLog #(TDiv #(t_data, 8)), t_addr)
+  , Add #(_c, TAdd #(SizeOf #(AXI4_Len), 1), t_addr)
+  , Add #(_d, n, t_addr)
+  , Add #(_e, TLog #(TDiv #(t_data, 8)), 8)
+  , Add #(_f, 8, t_addr)
+  );
+  Reg #(Bit #(TAdd #(SizeOf #(AXI4_Len), 1))) flitCnt <- mkRegU;
+  match {.offset, .size, .len} = params;
+  // state machine
+  let fsm <- mkRecipeFSM (rSeq (rBlock (
+    action
+      vPrint(4, $format("writeAXI4_Slave - resetting"));
+      flitCnt <= 0;
+      if (fromAXI4_Size (size) > fromInteger (valueOf(t_data) / 8))
+        die ($format ("writeAXI4_Slave: invalid AXI4 size ", fshow (size)));
+    endaction
+  , action
+      AXI4_AWFlit #(t_id, t_addr, t_awuser) awflit = AXI4_AWFlit {
+        awaddr: start_addr + zeroExtend (offset)
+      , awid: 0
+      , awsize: size
+      , awlen: len
+      , awregion: 0
+      , awburst: INCR
+      , awprot: 0
+      , awcache: 0
+      , awlock: ?
+      , awqos: 0
+      , awuser: 0
+      };
+      slv.aw.put (awflit);
+      vPrint(5, $format("writeAXI4_Slave - sent ", fshow (awflit)));
+    endaction
+  , rWhile (flitCnt <= zeroExtend (len),
+      rAct (action
+        Bit #(t_addr) currentAddr =
+          start_addr + zeroExtend (offset) + (zeroExtend (flitCnt) << pack (size));
+        Bit #(TLog #(t_ratio)) lanes_idx =
+          truncate (currentAddr >> log2 (valueOf (t_data) / 8));
+        Bit #(t_addr) currentAlignedAddr =
+          (currentAddr >> log2 (valueOf (t_data) / 8)) << log2 (valueOf (t_data) / 8);
+        Vector #(t_ratio, Bit #(t_data)) data = unpack (all_data);
+        Bit #(TLog #(TDiv #(t_data, 8))) byteOffset = truncate (currentAlignedAddr);
+        // prepare byte strobe and check for unaligned accesses, fix first flit
+        Bit #(8) accessSize = (1 << pack (size));
+        if (flitCnt == 0) accessSize =
+          accessSize - truncate (currentAddr & ~(~0 << pack (size)));
+        Bit #(TDiv #(t_data, 8)) strb = ~(~0 << accessSize);
+        AXI4_WFlit #(t_data, t_wuser) wflit = AXI4_WFlit {
+          wdata: data[lanes_idx]
+        , wstrb: strb << byteOffset
+        , wlast: flitCnt == zeroExtend (len)
+        , wuser: 0
+        };
+        slv.w.put (wflit);
+        flitCnt <= flitCnt + 1;
+        vPrint(5, $format("writeAXI4_Slave - sent ", fshow (wflit)));
+        vPrint(6, $format( "writeAXI4_Slave "
+                         , "- flitCnt <= ", fshow (flitCnt + 1) ));
+      endaction)
+    )
+  , rWhile (!slv.b.canPeek, rAct (action
+      vPrint(5, $format("writeAXI4_Slave - wait for b flit"));
+    endaction))
+  , action
+      let bflit <- get (slv.b);
+      vPrint(5, $format("writeAXI4_Slave - consume b flit: ", fshow (bflit)));
+    endaction
+  )));
+  return fsm;
+endmodule
+
 ////////////////////////////////////////////////////////////////////////////////
 
 module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, t_data
@@ -214,6 +297,105 @@ module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, t_data
   return fsm;
 endmodule
 
+module mkWriteStimuliFSM #( AXI4_Slave #( t_id, t_addr, t_data
+                                        , t_awuser, t_wuser, t_buser
+                                        , t_aruser, t_ruser ) golden
+                          , AXI4_Slave #( t_id, t_addr, t_data
+                                        , t_awuser, t_wuser, t_buser
+                                        , t_aruser, t_ruser ) dut
+                          , Source #(Maybe #(Tuple3 #( Bit #(6)
+                                                     , AXI4_Size
+                                                     , AXI4_Len ))) paramSrc
+                          , Source #(Bit #(512)) randSrc
+                          )
+  (RecipeFSM)
+  provisos ( Mul#(TDiv#(512, t_data), t_data, 512)
+           , Add#(a__, TLog#(TDiv#(512, t_data)), t_addr)
+           , Add#(b__, TLog#(TDiv#(t_data, 8)), 8)
+           , Add#(c__, TLog#(TDiv#(t_data, 8)), t_addr)
+           , Add#(d__, 6, t_addr)
+           , Add#(e__, 8, t_addr)
+           , Add#(f__, TAdd#(SizeOf #(AXI4_Len), 1), t_addr)
+           );
+  RecipeFSM goldenWrite <-
+    writeAXI4_Slave (0, paramSrc.peek.Valid, randSrc.peek, golden);
+  RecipeFSM dutWrite <-
+    writeAXI4_Slave (0, paramSrc.peek.Valid, randSrc.peek, dut);
+  let allDone <- mkReg (False);
+  let flitIdx <- mkRegU;
+  let checkRspDone <- mkRegU;
+  let fsm <- mkRecipeFSM (rSeq (rBlock (
+    rWhile (!allDone, rSeq (rBlock (
+    action vPrint (1, $format("=======================================")); endaction
+    , action vPrint (1, $format("==== write to golden ==== - ", fshow (paramSrc.peek))); endaction
+    , goldenWrite.trigger
+    , rWhile(!goldenWrite.canTrigger, rAct(noAction))
+    , action vPrint (1, $format("==== write to dut ==== - ", fshow (paramSrc.peek))); endaction
+    , dutWrite.trigger
+    , rWhile(!dutWrite.canTrigger, rAct(noAction))
+    , action vPrint (1, $format("==== send read back ====")); endaction
+    , action
+        match {.reqOffset, .reqSize, .reqLen} = paramSrc.peek.Valid;
+        AXI4_ARFlit #(t_id, t_addr, t_aruser) arflit = AXI4_ARFlit {
+            araddr: zeroExtend (reqOffset)
+          , arid: 0
+          , aruser: 0
+          , arlen: reqLen
+          , arburst: INCR
+          , arcache: 0
+          , arlock: ?
+          , arregion: 0
+          , arqos: 0
+          , arprot: 0
+          , arsize: reqSize
+          };
+          golden.ar.put(arflit);
+          dut.ar.put(arflit);
+          vPrint (1, $format("AR to golden and dut: ", fshow (arflit)));
+          flitIdx <= 0;
+          checkRspDone <= False;
+      endaction
+    , rWhile (!checkRspDone, rAct (action
+        match {.reqOffset, .reqSize, .reqLen} = paramSrc.peek.Valid;
+        let goldenR <- get (golden.r);
+        let dutR <- get (dut.r);
+        let goldenData = getRelevantData ( goldenR.rdata
+                                         , flitIdx
+                                         , reqSize
+                                         , reqOffset );
+        let dutData = getRelevantData ( dutR.rdata
+                                      , flitIdx
+                                      , reqSize
+                                      , reqOffset );
+        $display("------------------------------------------------");
+        vPrint (1, $format( "flitIdx: ", fshow (flitIdx)
+                          , ", reqOffset: ", fshow (reqOffset)
+                          , ", reqSize: ", fshow (reqSize)
+                          , ", reqLen: ", fshow (reqLen)
+                          ));
+        vPrint (1, $format("golden RFlit: ", fshow (goldenR)));
+        vPrint (1, $format("dut RFlit   : ", fshow (dutR)));
+        vPrint (1, $format("golden data: ", fshow (goldenData)));
+        vPrint (1, $format("dut data   : ", fshow (dutData)));
+        if (dutData != goldenData) die ($format ("Fail"));
+        flitIdx <= flitIdx + 1;
+        if (goldenR.rlast) begin
+          paramSrc.drop;
+          randSrc.drop;
+          checkRspDone <= True;
+        end
+      endaction))
+    , action
+        if (paramSrc.canPeek && !isValid (paramSrc.peek))
+          allDone <= True;
+      endaction
+    )))
+    // all req / rsp pairs have gone through, success
+  , die ($format ("Success"))
+  )));
+  return fsm;
+endmodule
+
 ////////////////////////////////////////////////////////////////////////////////
 
 // mem setup list
@@ -264,90 +446,8 @@ function Tuple3 #(Bit #(n), AXI4_Size, AXI4_Len)
                 , fromInteger (len - 1) );
 endfunction
 
-module writeAXI4_Slave #(
-    Bit #(t_addr) start_addr
-  , Tuple3 #(Bit #(n), AXI4_Size, AXI4_Len) params
-  , Bit #(t_all_data) all_data
-  , AXI4_Slave #( t_id, t_addr, t_data
-                , t_awuser, t_wuser, t_buser
-                , t_aruser, t_ruser ) slv
-  ) (RecipeFSM) provisos (
-    NumAlias #(t_ratio, TDiv #(t_all_data, t_data))
-  , Mul #(t_ratio, t_data, t_all_data)
-  , Add #(_a, TLog #(t_ratio), t_addr)
-  , Add #(_b, TLog #(TDiv #(t_data, 8)), t_addr)
-  , Add #(_c, TAdd #(SizeOf #(AXI4_Len), 1), t_addr)
-  , Add #(_d, n, t_addr)
-  , Add #(_e, TLog #(TDiv #(t_data, 8)), 8)
-  , Add #(_f, 8, t_addr)
-  );
-  Reg #(Bit #(TAdd #(SizeOf #(AXI4_Len), 1))) flitCnt <- mkRegU;
-  match {.offset, .size, .len} = params;
-  // state machine
-  let fsm <- mkRecipeFSM (rSeq (rBlock (
-    action
-      vPrint(4, $format("writeAXI4_Slave - resetting"));
-      flitCnt <= 0;
-      if (fromAXI4_Size (size) > fromInteger (valueOf(t_data) / 8))
-        die ($format ("writeAXI4_Slave: invalid AXI4 size ", fshow (size)));
-    endaction
-  , action
-      AXI4_AWFlit #(t_id, t_addr, t_awuser) awflit = AXI4_AWFlit {
-        awaddr: start_addr + zeroExtend (offset)
-      , awid: 0
-      , awsize: size
-      , awlen: len
-      , awregion: 0
-      , awburst: INCR
-      , awprot: 0
-      , awcache: 0
-      , awlock: ?
-      , awqos: 0
-      , awuser: 0
-      };
-      slv.aw.put (awflit);
-      vPrint(5, $format("writeAXI4_Slave - sent ", fshow (awflit)));
-    endaction
-  , rWhile (flitCnt <= zeroExtend (len),
-      rAct (action
-        Bit #(t_addr) currentAddr =
-          start_addr + zeroExtend (offset) + (zeroExtend (flitCnt) << pack (size));
-        Bit #(TLog #(t_ratio)) lanes_idx =
-          truncate (currentAddr >> log2 (valueOf (t_data) / 8));
-        Bit #(t_addr) currentAlignedAddr =
-          (currentAddr >> log2 (valueOf (t_data) / 8)) << log2 (valueOf (t_data) / 8);
-        Vector #(t_ratio, Bit #(t_data)) data = unpack (all_data);
-        Bit #(TLog #(TDiv #(t_data, 8))) byteOffset = truncate (currentAlignedAddr);
-        // prepare byte strobe and check for unaligned accesses, fix first flit
-        Bit #(8) accessSize = (1 << pack (size));
-        if (flitCnt == 0) accessSize =
-          accessSize - truncate (currentAddr & ~(~0 << pack (size)));
-        Bit #(TDiv #(t_data, 8)) strb = ~(~0 << accessSize);
-        AXI4_WFlit #(t_data, t_wuser) wflit = AXI4_WFlit {
-          wdata: data[lanes_idx]
-        , wstrb: strb << byteOffset
-        , wlast: flitCnt == zeroExtend (len)
-        , wuser: 0
-        };
-        slv.w.put (wflit);
-        flitCnt <= flitCnt + 1;
-        vPrint(5, $format("writeAXI4_Slave - sent ", fshow (wflit)));
-        vPrint(6, $format( "writeAXI4_Slave "
-                         , "- flitCnt <= ", fshow (flitCnt + 1) ));
-      endaction)
-    )
-  , rWhile (!slv.b.canPeek, rAct (action
-      vPrint(5, $format("writeAXI4_Slave - wait for b flit"));
-    endaction))
-  , action
-      let bflit <- get (slv.b);
-      vPrint(5, $format("writeAXI4_Slave - consume b flit: ", fshow (bflit)));
-    endaction
-  )));
-  return fsm;
-endmodule
-
 // test reads from wide interface to narrow interface
+////////////////////////////////////////////////////////////////////////////////
 module testReadsWideToNarrow (Empty);
   // golden memory
   AXI4_Slave #(0, 16, 512, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
@@ -391,6 +491,7 @@ module testReadsWideToNarrow (Empty);
 endmodule
 
 // test reads from narrow interface to wide interface
+////////////////////////////////////////////////////////////////////////////////
 module testReadsNarrowToWide (Empty);
   // golden memory
   AXI4_Slave #(0, 16, 64, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
@@ -450,82 +551,7 @@ module testWritesWideToNarrow (Empty);
   let reqParams =
     List::map (toAXI4_Params, genFlitParams (valueOf(512)/8, valueOf(512)/8));
   let paramSrc <- mkListToSource (reqParams);
-  RecipeFSM goldenWrite <-
-    writeAXI4_Slave (16'h0, paramSrc.peek.Valid, randSrc.peek, goldenMem);
-  RecipeFSM dutWrite <-
-    writeAXI4_Slave (16'h0, paramSrc.peek.Valid, randSrc.peek, dutSlave);
-  let allDone <- mkReg (False);
-  let flitIdx <- mkRegU;
-  let checkRspDone <- mkRegU;
-  let fsm <- mkRecipeFSM (rSeq (rBlock (
-    rWhile (!allDone, rSeq (rBlock (
-    action vPrint (1, $format("=======================================")); endaction
-    , action vPrint (1, $format("==== write to golden ==== - ", fshow (paramSrc.peek))); endaction
-    , goldenWrite.trigger
-    , rWhile(!goldenWrite.canTrigger, rAct(noAction))
-    , action vPrint (1, $format("==== write to dut ==== - ", fshow (paramSrc.peek))); endaction
-    , dutWrite.trigger
-    , rWhile(!dutWrite.canTrigger, rAct(noAction))
-    , action vPrint (1, $format("==== send read back ====")); endaction
-    , action
-        match {.reqOffset, .reqSize, .reqLen} = paramSrc.peek.Valid;
-        AXI4_ARFlit #(0, 16, 0) arflit = AXI4_ARFlit {
-            araddr: zeroExtend (reqOffset)
-          , arid: 0
-          , aruser: 0
-          , arlen: reqLen
-          , arburst: INCR
-          , arcache: 0
-          , arlock: ?
-          , arregion: 0
-          , arqos: 0
-          , arprot: 0
-          , arsize: reqSize
-          };
-          goldenMem.ar.put(arflit);
-          dutSlave.ar.put(arflit);
-          vPrint (1, $format("AR to golden and dut: ", fshow (arflit)));
-          flitIdx <= 0;
-          checkRspDone <= False;
-      endaction
-    , rWhile (!checkRspDone, rAct (action
-        match {.reqOffset, .reqSize, .reqLen} = paramSrc.peek.Valid;
-        let goldenR <- get (goldenMem.r);
-        let dutR <- get (dutSlave.r);
-        let goldenData = getRelevantData ( goldenR.rdata
-                                         , flitIdx
-                                         , reqSize
-                                         , reqOffset );
-        let dutData = getRelevantData ( dutR.rdata
-                                      , flitIdx
-                                      , reqSize
-                                      , reqOffset );
-        $display("------------------------------------------------");
-        vPrint (1, $format( "flitIdx: ", fshow (flitIdx)
-                          , ", reqOffset: ", fshow (reqOffset)
-                          , ", reqSize: ", fshow (reqSize)
-                          , ", reqLen: ", fshow (reqLen)
-                          ));
-        vPrint (1, $format("golden RFlit: ", fshow (goldenR)));
-        vPrint (1, $format("dut RFlit   : ", fshow (dutR)));
-        vPrint (1, $format("golden data: ", fshow (goldenData)));
-        vPrint (1, $format("dut data   : ", fshow (dutData)));
-        if (dutData != goldenData) die ($format ("Fail"));
-        flitIdx <= flitIdx + 1;
-        if (goldenR.rlast) begin
-          paramSrc.drop;
-          randSrc.drop;
-          checkRspDone <= True;
-        end
-      endaction))
-    , action
-        if (paramSrc.canPeek && !isValid (paramSrc.peek))
-          allDone <= True;
-      endaction
-    )))
-    // all req / rsp pairs have gone through, success
-  , die ($format ("Success"))
-  )));
+  let fsm <- mkWriteStimuliFSM (goldenMem, dutSlave, paramSrc, randSrc);
   let once <- mkReg(True);
   rule startTest(once); fsm.trigger; once <= False; endrule
 endmodule
