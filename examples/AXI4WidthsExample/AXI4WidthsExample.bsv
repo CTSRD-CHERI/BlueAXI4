@@ -556,4 +556,26 @@ module testWritesWideToNarrow (Empty);
   rule startTest(once); fsm.trigger; once <= False; endrule
 endmodule
 
+// test writes from narrow interface to wide interface
+module testWritesNarrowToWide (Empty);
+  // golden memory
+  AXI4_Slave #(0, 16, 64, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
+  // dut memory
+  AXI4_Slave #(0, 16, 512, 0, 0, 0, 0, 0) dutMem <- mkAXI4Mem (512, UnInit);
+  NumProxy#(1) one = ?;
+  Tuple2 #( AXI4_Slave #(0, 16, 64, 0, 0, 0, 0, 0)
+          , AXI4_Master#(0, 16, 512, 0, 0, 0, 0, 0) )
+    narrow2wide <- mkAXI4DataWidthShim_NarrowToWide (one, one);
+  match {.dutSlave, .dutMaster} = narrow2wide;
+  mkConnection (dutMaster, dutMem);
+  // random number generator
+  Source #(Bit #(512)) randSrc <- mkRNG (512'h01234567_89abcdef_02468ace_13579bdf_048c26ae_159d37bf_082a4c6e_193b5d7f_fedcba98_76543210_00000001_11111112_22222223_33333334_44444445_55555556);
+  let reqParams =
+    List::map (toAXI4_Params, genFlitParams (valueOf(512)/8, valueOf(64)/8));
+  let paramSrc <- mkListToSource (reqParams);
+  let fsm <- mkWriteStimuliFSM (goldenMem, dutSlave, paramSrc, randSrc);
+  let once <- mkReg(True);
+  rule startTest(once); fsm.trigger; once <= False; endrule
+endmodule
+
 endpackage
