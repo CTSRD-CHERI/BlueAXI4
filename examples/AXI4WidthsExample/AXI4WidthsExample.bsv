@@ -74,6 +74,22 @@ module mkListToSource #(List #(t) xs) (Source #(Maybe #(t)))
   return toSource (ff);
 endmodule
 
+function Bit #(t_data) getRelevantData ( Bit #(t_data) data
+                                       , AXI4_Len flitIdx
+                                       , AXI4_Size size
+                                       , Bit #(6) offset );
+  Bit #(6) offsetMask = ~0 << pack (size);
+  Bit #(6) alignedOffset = offset & offsetMask;
+  Bit #(6) withinSizeOffset = offset & ~offsetMask;
+  Bit #(t_data) mask = ~(~0 << (1 << (pack (size) + 3)));
+  if (flitIdx == 0) mask = mask & (~0 << {withinSizeOffset, 3'b000});
+
+  Bit #(9) byteShftAmnt =
+    zeroExtend (alignedOffset) + (1 << pack (size)) * zeroExtend (flitIdx);
+  Bit #(t_data) shiftedData = data >> (byteShftAmnt << 3);
+  return shiftedData & mask;
+endfunction
+
 ////////////////////////////////////////////////////////////////////////////////
 
 module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, t_data
@@ -96,22 +112,6 @@ module mkReadStimuliFSM #( AXI4_Slave #( t_id, t_addr, t_data
   Reg #(Bool)         rspDone <- mkRegU;
   Reg #(Bool)         allDone <- mkRegU;
   FIFOF #(Maybe #(Tuple3 #(AXI4_Len, AXI4_Size, Bit #(6)))) ff <- mkFIFOF;
-  // helper function
-  function Bit #(t_data) getRelevantData ( Bit #(t_data) data
-                                         , AXI4_Len flitIdx
-                                         , AXI4_Size size
-                                         , Bit #(6) offset );
-    Bit #(6) offsetMask = ~0 << pack (size);
-    Bit #(6) alignedOffset = offset & offsetMask;
-    Bit #(6) withinSizeOffset = offset & ~offsetMask;
-    Bit #(t_data) mask = ~(~0 << (1 << (pack (size) + 3)));
-    if (flitIdx == 0) mask = mask & (~0 << {withinSizeOffset, 3'b000});
-
-    Bit #(9) byteShftAmnt =
-      zeroExtend (alignedOffset) + (1 << pack (size)) * zeroExtend (flitIdx);
-    Bit #(t_data) shiftedData = data >> (byteShftAmnt << 3);
-    return shiftedData & mask;
-  endfunction
   // state machine
   let fsm <- mkRecipeFSM (rSeq(rBlock(
     // init bookkeeping
@@ -278,6 +278,8 @@ module writeAXI4_Slave #(
   , Add #(_b, TLog #(TDiv #(t_data, 8)), t_addr)
   , Add #(_c, TAdd #(SizeOf #(AXI4_Len), 1), t_addr)
   , Add #(_d, n, t_addr)
+  , Add #(_e, TLog #(TDiv #(t_data, 8)), 8)
+  , Add #(_f, 8, t_addr)
   );
   Reg #(Bit #(TAdd #(SizeOf #(AXI4_Len), 1))) flitCnt <- mkRegU;
   match {.offset, .size, .len} = params;
@@ -312,13 +314,18 @@ module writeAXI4_Slave #(
           start_addr + zeroExtend (offset) + (zeroExtend (flitCnt) << pack (size));
         Bit #(TLog #(t_ratio)) lanes_idx =
           truncate (currentAddr >> log2 (valueOf (t_data) / 8));
+        Bit #(t_addr) currentAlignedAddr =
+          (currentAddr >> log2 (valueOf (t_data) / 8)) << log2 (valueOf (t_data) / 8);
         Vector #(t_ratio, Bit #(t_data)) data = unpack (all_data);
-        Bit #(TLog #(TDiv #(t_data, 8))) byteOffset = truncate (currentAddr);
-        // mask out relevant subset of all_data
-        Bit #(t_addr) addrMask = ~(~0 << pack (size));
+        Bit #(TLog #(TDiv #(t_data, 8))) byteOffset = truncate (currentAlignedAddr);
+        // prepare byte strobe and check for unaligned accesses, fix first flit
+        Bit #(8) accessSize = (1 << pack (size));
+        if (flitCnt == 0) accessSize =
+          accessSize - truncate (currentAddr & ~(~0 << pack (size)));
+        Bit #(TDiv #(t_data, 8)) strb = ~(~0 << accessSize);
         AXI4_WFlit #(t_data, t_wuser) wflit = AXI4_WFlit {
           wdata: data[lanes_idx]
-        , wstrb: ~(~0 << pack (size)) << byteOffset
+        , wstrb: strb << byteOffset
         , wlast: flitCnt == zeroExtend (len)
         , wuser: 0
         };
@@ -341,7 +348,7 @@ module writeAXI4_Slave #(
 endmodule
 
 // test reads from wide interface to narrow interface
-module testReadWideToNarrow (Empty);
+module testReadsWideToNarrow (Empty);
   // golden memory
   AXI4_Slave #(0, 16, 512, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
   let setupGolden <- writeAXI4_Slave (
@@ -384,7 +391,7 @@ module testReadWideToNarrow (Empty);
 endmodule
 
 // test reads from narrow interface to wide interface
-module testReadNarrowToWide (Empty);
+module testReadsNarrowToWide (Empty);
   // golden memory
   AXI4_Slave #(0, 16, 64, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
   let setupGolden <- writeAXI4_Slave (
@@ -421,6 +428,103 @@ module testReadNarrowToWide (Empty);
   , rWhile(!setupDUT.canTrigger, rAct(noAction))
   , $display("%0t - running stimuli", $time)
   , stimuli.trigger
+  )));
+  let once <- mkReg(True);
+  rule startTest(once); fsm.trigger; once <= False; endrule
+endmodule
+
+// test writes from wide interface to narrow interface
+module testWritesWideToNarrow (Empty);
+  // golden memory
+  AXI4_Slave #(0, 16, 512, 0, 0, 0, 0, 0) goldenMem <- mkAXI4Mem (512, UnInit);
+  // dut memory
+  AXI4_Slave #(0, 16, 64, 0, 0, 0, 0, 0) dutMem <- mkAXI4Mem (512, UnInit);
+  NumProxy#(1) one = ?;
+  Tuple2 #( AXI4_Slave #(0, 16, 512, 0, 0, 0, 0, 0)
+          , AXI4_Master#(0, 16, 64, 0, 0, 0, 0, 0) )
+    wide2narrow <- mkAXI4DataWidthShim_WideToNarrow (one, one);
+  match {.dutSlave, .dutMaster} = wide2narrow;
+  mkConnection (dutMaster, dutMem);
+  // random number generator
+  Source #(Bit #(512)) randSrc <- mkRNG (512'h01234567_89abcdef_02468ace_13579bdf_048c26ae_159d37bf_082a4c6e_193b5d7f_fedcba98_76543210_00000001_11111112_22222223_33333334_44444445_55555556);
+  let reqParams =
+    List::map (toAXI4_Params, genFlitParams (valueOf(512)/8, valueOf(512)/8));
+  let paramSrc <- mkListToSource (reqParams);
+  RecipeFSM goldenWrite <-
+    writeAXI4_Slave (16'h0, paramSrc.peek.Valid, randSrc.peek, goldenMem);
+  RecipeFSM dutWrite <-
+    writeAXI4_Slave (16'h0, paramSrc.peek.Valid, randSrc.peek, dutSlave);
+  let allDone <- mkReg (False);
+  let flitIdx <- mkRegU;
+  let checkRspDone <- mkRegU;
+  let fsm <- mkRecipeFSM (rSeq (rBlock (
+    rWhile (!allDone, rSeq (rBlock (
+    action vPrint (1, $format("=======================================")); endaction
+    , action vPrint (1, $format("==== write to golden ==== - ", fshow (paramSrc.peek))); endaction
+    , goldenWrite.trigger
+    , rWhile(!goldenWrite.canTrigger, rAct(noAction))
+    , action vPrint (1, $format("==== write to dut ==== - ", fshow (paramSrc.peek))); endaction
+    , dutWrite.trigger
+    , rWhile(!dutWrite.canTrigger, rAct(noAction))
+    , action vPrint (1, $format("==== send read back ====")); endaction
+    , action
+        match {.reqOffset, .reqSize, .reqLen} = paramSrc.peek.Valid;
+        AXI4_ARFlit #(0, 16, 0) arflit = AXI4_ARFlit {
+            araddr: zeroExtend (reqOffset)
+          , arid: 0
+          , aruser: 0
+          , arlen: reqLen
+          , arburst: INCR
+          , arcache: 0
+          , arlock: ?
+          , arregion: 0
+          , arqos: 0
+          , arprot: 0
+          , arsize: reqSize
+          };
+          goldenMem.ar.put(arflit);
+          dutSlave.ar.put(arflit);
+          vPrint (1, $format("AR to golden and dut: ", fshow (arflit)));
+          flitIdx <= 0;
+          checkRspDone <= False;
+      endaction
+    , rWhile (!checkRspDone, rAct (action
+        match {.reqOffset, .reqSize, .reqLen} = paramSrc.peek.Valid;
+        let goldenR <- get (goldenMem.r);
+        let dutR <- get (dutSlave.r);
+        let goldenData = getRelevantData ( goldenR.rdata
+                                         , flitIdx
+                                         , reqSize
+                                         , reqOffset );
+        let dutData = getRelevantData ( dutR.rdata
+                                      , flitIdx
+                                      , reqSize
+                                      , reqOffset );
+        $display("------------------------------------------------");
+        vPrint (1, $format( "flitIdx: ", fshow (flitIdx)
+                          , ", reqOffset: ", fshow (reqOffset)
+                          , ", reqSize: ", fshow (reqSize)
+                          , ", reqLen: ", fshow (reqLen)
+                          ));
+        vPrint (1, $format("golden RFlit: ", fshow (goldenR)));
+        vPrint (1, $format("dut RFlit   : ", fshow (dutR)));
+        vPrint (1, $format("golden data: ", fshow (goldenData)));
+        vPrint (1, $format("dut data   : ", fshow (dutData)));
+        if (dutData != goldenData) die ($format ("Fail"));
+        flitIdx <= flitIdx + 1;
+        if (goldenR.rlast) begin
+          paramSrc.drop;
+          randSrc.drop;
+          checkRspDone <= True;
+        end
+      endaction))
+    , action
+        if (paramSrc.canPeek && !isValid (paramSrc.peek))
+          allDone <= True;
+      endaction
+    )))
+    // all req / rsp pairs have gone through, success
+  , die ($format ("Success"))
   )));
   let once <- mkReg(True);
   rule startTest(once); fsm.trigger; once <= False; endrule
