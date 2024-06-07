@@ -82,38 +82,82 @@
 #define _DIV8(N) ((N)/8)
 #define _MOD8(N) ((N)%8)
 #define _DIV8CEIL(N) (((N)/8)+(((N)%8)?1:0))
-#define _MASK8LO(N) (~(0xff<<(N)))
-#define _MASK8HI(N) (~(0xff>>(N)))
+// Mask with the bottom n bits set
+static inline uint8_t mask8_lo(uint8_t n) {
+  return ~(0xff << n);
+}
+// Mask with the top n bits set
+static inline uint8_t mask8_hi(uint8_t n) {
+  return ~(0xff >> n);
+}
 
-static inline void *bitmemcpy( void *destArg, const size_t destBitOffset
-                             , const void *srcArg, const size_t srcBitOffset
+static inline void *bitmemcpy( uint8_t *dest, const size_t destBitOffset
+                             , const uint8_t *src, const size_t srcBitOffset
                              , const size_t bitLen ) {
   size_t completeBytes = bitLen / 8;
   size_t overflowBits = bitLen % 8;
-  uint8_t* dest = (uint8_t*) destArg;
-  uint8_t* src = (uint8_t*) srcArg;
   if (destBitOffset == 0 && srcBitOffset == 0) {
     memcpy (dest, src, completeBytes);
     if (overflowBits)
-      dest[completeBytes] = src[completeBytes] & _MASK8LO(overflowBits);
+      dest[completeBytes] = src[completeBytes] & mask8_lo(overflowBits);
   }
   else {
     int i = 0;
-    uint8_t tmp = 0;
-    do {
-      tmp = src[i];
+    for (; i < completeBytes; i++) {
+      // Get the byte starting at the i-th byte + srcBitOffset in the stream
+      uint8_t dataByte = src[i] >> srcBitOffset;
       if (srcBitOffset) {
-        tmp >>= srcBitOffset;
-        tmp  |= src[i+1] << (8-srcBitOffset);
+        dataByte |= src[i+1] << (8-srcBitOffset);
       }
-      dest[i] &= _MASK8LO(destBitOffset);
-      dest[i] |= tmp << destBitOffset;
+      // Write that byte in starting at the i-th byte + dstBitOffset in the stream.
+      // For example, if destBitOffset = 1, mask *out* the top 7 bits of dest[i]
+      // (= mask *in* the bottom destBitOffset bits, which may have been written by a previous invocation of this function)
+      // and OR the bottom 7 bits of dataByte into the masked-out space.
+      dest[i] &= mask8_lo(destBitOffset);
+      dest[i] |= dataByte << destBitOffset;
+      // Put the remaining bits of dataByte into the next byte of dest
       if (destBitOffset) {
-        dest[i+1] &= _MASK8HI(8-destBitOffset);
-        dest[i+1] |= tmp >> (8-destBitOffset);
+        // If destBitOffset = 1, mask out the bottom destBitOffset bits
+        // (= mask *in* the top 7 bits)
+        // and OR the top bit of dataByte into the bottom bit of dest[i+1]
+        dest[i+1] &= mask8_hi(8-destBitOffset);
+        dest[i+1] |= dataByte >> (8-destBitOffset);
       }
-      i++;
-    } while (i < completeBytes);
+    }
+    // Handle overflowBits
+    if (overflowBits) {
+      // As above, get the byte starting at the i-th byte + srcBitOffset
+      uint8_t dataByte = src[i] >> srcBitOffset;
+      // but only read the following byte if the srcBitOffset + overflowBits go into the next byte
+      // e.g. if srcBitOffset = 7, and overflowBits = 1, we only want the last bit so it doesn't matter
+      if (srcBitOffset + overflowBits > 8) {
+        dataByte |= src[i+1] << (8-srcBitOffset);
+      }
+      // ... and mask out everything except the overflowBits
+      dataByte = dataByte & mask8_lo(overflowBits);
+
+      // Write those overflowBits in starting at the i-th byte + dstBitOffset in the stream.
+      // Mask out the bits we're going to write => mask in the bits above and below the range [destBitOffset:destBitOffset+overflowBits)
+      uint8_t dstMask = mask8_lo(destBitOffset);
+      // If destBitOffset = 7, overflowBits = 1 there's nothing above the written bit to mask in.
+      // If destBitOffset = 6, overflowBits = 1 the top bit should be masked in.
+      if (destBitOffset + overflowBits < 8) {
+        dstMask |= mask8_hi(8 - destBitOffset + overflowBits);
+      }
+      dest[i] &= dstMask;
+      // OR in the dataByte (bits above overflowBits have been zeroed out)
+      dest[i] |= dataByte << destBitOffset;
+      // Put the remaining bits of dataByte into the next byte of dest
+      // if destBitOffset = 7, and overflowBits = 2, we need to write one bit into the next byte
+      if (destBitOffset + overflowBits > 8) {
+        // The range starts at bit 0, ends at (destBitOffset + overflowBits - 8)
+        // If (destBitOffset + overflowBits - 8) = 1, mask out the bottom 1 bits
+        // (= mask *in* the top 7 bits)
+        // and OR the top bit of dataByte into the bottom bit of dest[i+1]
+        dest[i+1] &= mask8_hi(8-(destBitOffset + overflowBits - 8));
+        dest[i+1] |= dataByte >> (8-(destBitOffset + overflowBits - 8));
+      }
+    }
   }
   return dest;
 }
@@ -121,9 +165,9 @@ static inline void *bitmemcpy( void *destArg, const size_t destBitOffset
 static inline void bitHexDump (FILE* f, const uint8_t* raw, size_t bitLen) {
   if (bitLen) {
     fprintf (f, "0x");
-    size_t remain = _MOD8(bitLen);
-    size_t complete = _DIV8(bitLen);
-    if (remain) fprintf (f, "%02x", raw[complete] & _MASK8LO(remain));
+    size_t complete = bitLen / 8;
+    size_t remain = bitLen % 8;
+    if (remain) fprintf (f, "%02x", raw[complete] & mask8_lo(remain));
     for (int i = complete-1; i >= 0; i--) fprintf (f, "%02x", raw[i]);
   } else fprintf (f, "x");
 }
