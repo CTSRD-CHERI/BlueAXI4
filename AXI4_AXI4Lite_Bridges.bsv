@@ -150,6 +150,8 @@ function Action checkAXI4_AWFlit ( AXI4_Size busSize
       die ($format( "checkAXI4_AWFlit - Unsupported non-0 awid (%0d)"
                   , x.awid
                   , "\n", fshow (x) ));
+    // Assert that each burst is of exactly 1 transfer.
+    // If that is the case, we don't need to check the burst kind, because that only affects subsequent transfers.
     if (x.awlen != 0)
       die ($format( "checkAXI4_AWFlit - Unsupported non-0 awlen (%0d)"
                   , x.awlen
@@ -158,10 +160,6 @@ function Action checkAXI4_AWFlit ( AXI4_Size busSize
       die ($format("checkAXI4_AWFlit - Unsupported awsize"
                   , " (expected: ", showAXI4_Size (busSize)
                   , ", given: ", showAXI4_Size (x.awsize), ")"
-                  , "\n", fshow (x) ));
-    if (x.awburst != FIXED)
-      die ($format( "checkAXI4_AWFlit - Unsupported non-FIXED awburst"
-                  , "(", fshow (x.awburst), ")"
                   , "\n", fshow (x) ));
     if (x.awlock != NORMAL)
       die ($format( "checkAXI4_AWFlit - Unsupported non-NORMAL awlock"
@@ -201,6 +199,8 @@ function Action checkAXI4_ARFlit ( AXI4_Size busSize
       die ($format( "checkAXI4_ARFlit - Unsupported non-0 arid (%0d)"
                   , x.arid
                   , "\n", fshow (x) ));
+    // Assert that each burst is of exactly 1 transfer.
+    // If that is the case, we don't need to check the burst kind, because that only affects subsequent transfers.
     if (x.arlen != 0)
       die ($format( "checkAXI4_ARFlit - Unsupported non-0 arlen (%0d)"
                   , x.arlen
@@ -209,10 +209,6 @@ function Action checkAXI4_ARFlit ( AXI4_Size busSize
       die ($format("checkAXI4_ARFlit - Unsupported arsize"
                   , " (expected: ", showAXI4_Size (busSize)
                   , ", given: ", showAXI4_Size (x.arsize), ")"
-                  , "\n", fshow (x) ));
-    if (x.arburst != FIXED)
-      die ($format( "checkAXI4_ARFlit - Unsupported non-FIXED arburst"
-                  , "(", fshow (x.arburst), ")"
                   , "\n", fshow (x) ));
     if (x.arlock != NORMAL)
       die ($format( "checkAXI4_ARFlit - Unsupported non-NORMAL arlock"
