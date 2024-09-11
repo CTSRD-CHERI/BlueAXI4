@@ -82,48 +82,70 @@
 #define _DIV8(N) ((N)/8)
 #define _MOD8(N) ((N)%8)
 #define _DIV8CEIL(N) (((N)/8)+(((N)%8)?1:0))
-#define _MASK8LO(N) (~(0xff<<(N)))
-#define _MASK8HI(N) (~(0xff>>(N)))
+// Mask with the bottom n bits set
+static inline uint8_t mask8_lo(uint8_t n) {
+  return ~(0xff << n);
+}
+// Mask with the top n bits set
+static inline uint8_t mask8_hi(uint8_t n) {
+  return ~(0xff >> n);
+}
 
-static inline void *bitmemcpy( void *destArg, const size_t destBitOffset
-                             , const void *srcArg, const size_t srcBitOffset
-                             , const size_t bitLen ) {
-  size_t completeBytes = bitLen / 8;
-  size_t overflowBits = bitLen % 8;
-  uint8_t* dest = (uint8_t*) destArg;
-  uint8_t* src = (uint8_t*) srcArg;
-  if (destBitOffset == 0 && srcBitOffset == 0) {
-    memcpy (dest, src, completeBytes);
-    if (overflowBits)
-      dest[completeBytes] = src[completeBytes] & _MASK8LO(overflowBits);
+#define min(x, y) (((x) < (y)) ? (x) : (y))
+// little bit endian: 12 bits from 0x12 0x34 gives 0x12 0x4
+static inline void *bitmemcpy( uint8_t *dst
+                             , size_t dstBitOffset
+                             , const uint8_t *src
+                             , size_t srcBitOffset
+                             , size_t bitLen ) {
+  uint8_t *origDst = dst;
+
+  // support offsets greater than 8
+  dst += dstBitOffset / 8;
+  dstBitOffset %= 8;
+  src += srcBitOffset / 8;
+  srcBitOffset %= 8;
+
+  // eagerly load src bits into a buffer
+  uint16_t buff = *src >> srcBitOffset;
+  size_t buffFillLvl = 8 - srcBitOffset;
+
+  // copy loop
+  while (bitLen > 0)
+  {
+    size_t bitsToCopy = min(bitLen, 8 - dstBitOffset);
+    if (buffFillLvl < bitsToCopy)
+    {
+      ++src;
+      buff |= *src << buffFillLvl;
+      buffFillLvl += 8;
+    }
+    *dst = // preserve already correct dst bits
+           (*dst & mask8_lo(dstBitOffset))
+           // fold in new bits from the buffer
+         | ((buff & mask8_lo(bitsToCopy)) << dstBitOffset)
+           // preserve untouched bits of dst (only applies in last iteration)
+         | (*dst & mask8_hi(8 - bitsToCopy - dstBitOffset));
+    buff >>= bitsToCopy;
+    buffFillLvl -= bitsToCopy;
+    dstBitOffset += bitsToCopy;
+    if (dstBitOffset >= 8)
+    {
+      ++dst;
+      dstBitOffset -= 8;
+    }
+    bitLen -= bitsToCopy;
   }
-  else {
-    int i = 0;
-    uint8_t tmp = 0;
-    do {
-      tmp = src[i];
-      if (srcBitOffset) {
-        tmp >>= srcBitOffset;
-        tmp  |= src[i+1] << (8-srcBitOffset);
-      }
-      dest[i] &= _MASK8LO(destBitOffset);
-      dest[i] |= tmp << destBitOffset;
-      if (destBitOffset) {
-        dest[i+1] &= _MASK8HI(8-destBitOffset);
-        dest[i+1] |= tmp >> (8-destBitOffset);
-      }
-      i++;
-    } while (i < completeBytes);
-  }
-  return dest;
+
+  return origDst;
 }
 
 static inline void bitHexDump (FILE* f, const uint8_t* raw, size_t bitLen) {
   if (bitLen) {
     fprintf (f, "0x");
-    size_t remain = _MOD8(bitLen);
-    size_t complete = _DIV8(bitLen);
-    if (remain) fprintf (f, "%02x", raw[complete] & _MASK8LO(remain));
+    size_t complete = bitLen / 8;
+    size_t remain = bitLen % 8;
+    if (remain) fprintf (f, "%02x", raw[complete] & mask8_lo(remain));
     for (int i = complete-1; i >= 0; i--) fprintf (f, "%02x", raw[i]);
   } else fprintf (f, "x");
 }
