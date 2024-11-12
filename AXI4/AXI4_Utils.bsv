@@ -47,6 +47,7 @@ import AXI4_Utils_Map_Utils      :: *;
 import AXI4_Utils_Misc           :: *;
 import AXI4_Utils_Write_Channels :: *;
 import AXI4_Utils_Width_Shim     :: *;
+import AXI4_Firewall             :: *;
 
 export AXI4_Utils_Basics         :: *;
 export AXI4_Utils_ID_Crossing    :: *;
@@ -54,5 +55,6 @@ export AXI4_Utils_Map_Utils      :: *;
 export AXI4_Utils_Misc           :: *;
 export AXI4_Utils_Write_Channels :: *;
 export AXI4_Utils_Width_Shim     :: *;
+export AXI4_Firewall             :: *;
 
 endpackage
