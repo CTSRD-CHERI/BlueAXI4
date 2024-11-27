@@ -154,7 +154,7 @@ function Action checkAXI4_AWFlit ( AXI4_Size busSize
       die ($format( "checkAXI4_AWFlit - Unsupported non-0 awlen (%0d)"
                   , x.awlen
                   , "\n", fshow (x) ));
-    if (x.awsize != busSize)
+    if (x.awsize > busSize)
       die ($format("checkAXI4_AWFlit - Unsupported awsize"
                   , " (expected: ", showAXI4_Size (busSize)
                   , ", given: ", showAXI4_Size (x.awsize), ")"
@@ -205,7 +205,7 @@ function Action checkAXI4_ARFlit ( AXI4_Size busSize
       die ($format( "checkAXI4_ARFlit - Unsupported non-0 arlen (%0d)"
                   , x.arlen
                   , "\n", fshow (x) ));
-    if (x.arsize != busSize)
+    if (x.arsize > busSize)
       die ($format("checkAXI4_ARFlit - Unsupported arsize"
                   , " (expected: ", showAXI4_Size (busSize)
                   , ", given: ", showAXI4_Size (x.arsize), ")"
